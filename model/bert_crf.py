@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from transformers import BertModel
-from torchcrf import CRF
+from TorchCRF import CRF
 
 from config import BERT_MODEL_PATH
 class AllusisonBERTCRF(nn.Module):
