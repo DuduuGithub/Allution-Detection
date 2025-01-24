@@ -11,8 +11,8 @@ EPOCHS = 10
 LEARNING_RATE = 2e-5
 
 # 路径配置
-TRAIN_PATH = 'data/train.txt'
-VAL_PATH = 'data/val.txt'
+TRAIN_PATH = 'data/final_data.csv'
+VAL_PATH = 'data/final_data.csv'  # 暂时使用相同的数据集
 SAVE_DIR = 'output'
 ALLUSION_TYPES_PATH = 'data/allusion_types.txt'
 

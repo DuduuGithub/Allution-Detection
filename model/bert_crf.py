@@ -4,9 +4,9 @@ from transformers import BertModel
 from TorchCRF import CRF
 
 from config import BERT_MODEL_PATH
-class AllusisonBERTCRF(nn.Module):
+class AllusionBERTCRF(nn.Module):
     def __init__(self, num_types, task='position'):
-        super(AllusisonBERTCRF, self).__init__()
+        super(AllusionBERTCRF, self).__init__()
         
         self.bert = BertModel.from_pretrained(BERT_MODEL_PATH)
         self.dropout = nn.Dropout(0.1)

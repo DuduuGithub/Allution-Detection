@@ -2,8 +2,8 @@ import torch
 from torch.utils.data import DataLoader
 from transformers import BertTokenizer, get_linear_schedule_with_warmup
 from torch.optim import AdamW
-from model.poetry_dataset import PoetryNERDataset
-from model.bert_crf import AllusisonBERTCRF
+from poetry_dataset import PoetryNERDataset
+from bert_crf import AllusionBERTCRF
 import os
 from config import MODEL_NAME, BERT_MODEL_PATH, MAX_SEQ_LEN, BATCH_SIZE, EPOCHS, LEARNING_RATE, TRAIN_PATH, VAL_PATH, SAVE_DIR, ALLUSION_TYPES_PATH
 
@@ -34,7 +34,7 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler, d
             
             total_loss += loss.item()
             
-            if (batch_idx + 1) % 100 == 0:
+            if (batch_idx + 1) % 1 == 0:
                 print(f'Epoch {epoch+1}, Batch {batch_idx+1}, Loss: {loss.item():.4f}')
         
         avg_train_loss = total_loss / len(train_dataloader)
@@ -82,15 +82,24 @@ def main():
     save_dir = SAVE_DIR
     os.makedirs(save_dir, exist_ok=True)
     
+    
+    # 获取当前文件的绝对路径
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # 获取guwenbert-large的绝对路径
+    model_path = os.path.join(os.path.dirname(current_dir), 'model', model_name)
+    
+    print(f"尝试加载模型，路径: {model_path}")
+        
+    # 首先初始化tokenizer
+    tokenizer = BertTokenizer.from_pretrained(model_path)
+    
     # 获取典故类型数量
     train_dataset = PoetryNERDataset(TRAIN_PATH, tokenizer, max_len, task='type')
     num_types = len(train_dataset.type_label2id)
     
     # 阶段一：典故位置识别
     print("开始训练阶段一：典故位置识别")
-    model = AllusisonBERTCRF(num_types=num_types, task='position').to(device)
-    
-    tokenizer = BertTokenizer.from_pretrained(model_name)
+    model = AllusionBERTCRF(num_types=num_types, task='position').to(device)
     
     # 加载位置识别数据集
     train_dataset = PoetryNERDataset(TRAIN_PATH, tokenizer, max_len, task='position')
