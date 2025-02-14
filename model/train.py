@@ -5,10 +5,14 @@ from torch.optim import AdamW
 from poetry_dataset import PoetryNERDataset
 from bert_crf import AllusionBERTCRF
 import os
-from config import MODEL_NAME, BERT_MODEL_PATH, MAX_SEQ_LEN, BATCH_SIZE, EPOCHS, LEARNING_RATE, TRAIN_PATH, VAL_PATH, SAVE_DIR, ALLUSION_TYPES_PATH
+from config import MODEL_NAME, BERT_MODEL_PATH, MAX_SEQ_LEN, BATCH_SIZE, EPOCHS, LEARNING_RATE, TRAIN_PATH, TEST_PATH, SAVE_DIR, ALLUSION_TYPES_PATH
 
 def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler, device, num_epochs, save_dir, task):
     best_val_loss = float('inf')
+    
+    # 在函数开始时创建文件
+    train_log_file = os.path.join(save_dir, f'train_loss_{task}.txt')
+    val_log_file = os.path.join(save_dir, f'val_loss_{task}.txt')
     
     for epoch in range(num_epochs):
         # 训练阶段
@@ -58,6 +62,14 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler, d
         
         avg_val_loss = val_loss / len(val_dataloader)
         
+        # 保存训练和验证损失到文件
+        with open(train_log_file, 'a', encoding='utf-8') as f:
+            f.write(f'Epoch {epoch+1}: {avg_train_loss:.4f}\n')
+        
+        with open(val_log_file, 'a', encoding='utf-8') as f:
+            f.write(f'Epoch {epoch+1}: {avg_val_loss:.4f}\n')
+        
+        # 同时打印到控制台
         print(f'Epoch {epoch+1}:')
         print(f'Average training loss: {avg_train_loss:.4f}')
         print(f'Average validation loss: {avg_val_loss:.4f}')
@@ -103,7 +115,7 @@ def main():
     
     # 加载位置识别数据集
     train_dataset = PoetryNERDataset(TRAIN_PATH, tokenizer, max_len, task='position')
-    val_dataset = PoetryNERDataset(VAL_PATH, tokenizer, max_len, task='position')
+    val_dataset = PoetryNERDataset(TEST_PATH, tokenizer, max_len, task='position')
     
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size)
@@ -128,7 +140,7 @@ def main():
     
     # 加载类型分类数据集
     train_dataset = PoetryNERDataset(TRAIN_PATH, tokenizer, max_len, task='type')
-    val_dataset = PoetryNERDataset(VAL_PATH, tokenizer, max_len, task='type')
+    val_dataset = PoetryNERDataset(TEST_PATH, tokenizer, max_len, task='type')
     
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size)

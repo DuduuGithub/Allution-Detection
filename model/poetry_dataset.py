@@ -89,11 +89,7 @@ class PoetryNERDataset(Dataset):
     
     def parse_line(self, line):
         """解析单行数据，提取诗句和典故位置"""
-        parts = line.strip().split('\t')
-        if len(parts) < 7:  # 确保有足够的列
-            print(f"列数不足: 期望至少7列，实际{len(parts)}列")
-            return None, []
-        
+        parts = line.strip().split('\t')        
         sentence = parts[0]
         variation_number = parts[4].strip()  # 获取典故数量
         
@@ -104,11 +100,6 @@ class PoetryNERDataset(Dataset):
         try:
             # 解析位置信息字符串
             allusion_info = parts[6].strip()  # transformed_allusion
-            
-            # 如果是空字符串或无效格式，跳过
-            if not allusion_info or allusion_info == '[]':
-                return None, []
-            
             # 按分号分割多个典故
             allusion_parts = allusion_info.split(';')
             
@@ -121,20 +112,13 @@ class PoetryNERDataset(Dataset):
                 # 移除首尾的方括号
                 part = part.strip('[]')
                 # 分割位置和典故名称
-                items = [item.strip() for item in part.split(',')]
-                
-                if len(items) < 3:  # 确保至少有两个位置和一个典故名称
-                    continue
-                    
+                items = [item.strip() for item in part.split(',')]        
                 # 获取位置和典故名称
                 positions = [int(pos) for pos in items[:-1]]  # 所有数字都是位置
-                allusion_type = items[-1].strip('"\'')  # 最后一个是典故名称
+                allusion_type = items[-1] # 最后一个是典故名称
                 
                 allusions.append((positions, allusion_type))
-            
-            if not allusions:  # 如果没有有效的典故信息
-                return None, []
-            
+                
             return sentence, allusions
         
         except Exception as e:
