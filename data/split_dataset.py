@@ -56,5 +56,5 @@ def split_dataset(input_file, train_ratio=0.8, random_state=42):
     print(f"测试集中包含典故的样本数: {len(test_df[test_df['variation_number'] != '0'])}")
 
 if __name__ == "__main__":
-    input_file = "data/final_data.csv"
-    split_dataset(input_file) 
+        input_file = "data/merged_data.csv"
+        split_dataset(input_file) 
