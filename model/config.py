@@ -12,7 +12,7 @@ LEARNING_RATE = 2e-5
 
 # 路径配置
 TRAIN_PATH = 'data/train.csv'
-TEST_PATH = 'data/test.csv'  
+TEST_PATH = 'data/test.csv'   
 SAVE_DIR = 'output'
 ALLUSION_TYPES_PATH = 'data/allusion_types.txt'
 

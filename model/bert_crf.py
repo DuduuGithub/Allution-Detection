@@ -13,11 +13,11 @@ class AllusionBERTCRF(nn.Module):
         
         # 修改位置识别分类器为3分类：B/I/O
         self.position_classifier = nn.Linear(self.bert.config.hidden_size, 3)
-        self.position_crf = CRF(3, batch_first=True)  # 修改为3个标签状态
+        self.position_crf = CRF(3)  # 修改为3个标签状态
         
         # 类型分类器
         self.type_classifier = nn.Linear(self.bert.config.hidden_size, num_types)
-        self.type_crf = CRF(num_types, batch_first=True)
+        self.type_crf = CRF(num_types)
         
         self.task = task
     
@@ -32,8 +32,9 @@ class AllusionBERTCRF(nn.Module):
         
         if self.task == 'position':
             if labels is not None:
-                loss = -self.position_crf(position_emissions, labels, mask=mask, reduction='mean')
-                return loss
+                # 计算平均损失
+                loss = -self.position_crf(position_emissions, labels, mask=mask)
+                return loss.mean()
             else:
                 prediction = self.position_crf.decode(position_emissions, mask=mask)
                 return prediction
@@ -49,14 +50,14 @@ class AllusionBERTCRF(nn.Module):
             
             if type_labels is not None:
                 # 只在预测为典故的位置(B或I)计算类型损失
-                position_loss = -self.position_crf(position_emissions, labels, mask=mask, reduction='mean')
+                position_loss = -self.position_crf(position_emissions, labels, mask=mask)
                 
                 # 创建类型预测的mask（只在典故位置B或I计算损失）
                 type_mask = ((labels == 1) | (labels == 2)) & mask  # B=1, I=2
-                type_loss = -self.type_crf(type_emissions, type_labels, mask=type_mask, reduction='mean')
+                type_loss = -self.type_crf(type_emissions, type_labels, mask=type_mask)
                 
-                # 总损失为位置损失和类型损失的加权和
-                total_loss = position_loss + type_loss
+                # 计算平均损失
+                total_loss = position_loss.mean() + type_loss.mean()
                 return total_loss
             else:
                 # 推理时，只对预测为典故的位置(B或I)进行类型预测

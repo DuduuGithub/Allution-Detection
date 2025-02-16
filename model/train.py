@@ -38,7 +38,7 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler, d
             
             total_loss += loss.item()
             
-            if (batch_idx + 1) % 1 == 0:
+            if (batch_idx + 1) % 10 == 0:
                 print(f'Epoch {epoch+1}, Batch {batch_idx+1}, Loss: {loss.item():.4f}')
         
         avg_train_loss = total_loss / len(train_dataloader)
