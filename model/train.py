@@ -6,6 +6,7 @@ from poetry_dataset import PoetryNERDataset
 from bert_crf import AllusionBERTCRF
 import os
 from config import MODEL_NAME, BERT_MODEL_PATH, MAX_SEQ_LEN, BATCH_SIZE, EPOCHS, LEARNING_RATE, TRAIN_PATH, TEST_PATH, SAVE_DIR, ALLUSION_TYPES_PATH
+import argparse
 
 def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler, device, num_epochs, save_dir, task):
     best_val_loss = float('inf')
@@ -84,6 +85,12 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler, d
             }, os.path.join(save_dir, f'best_model_{task}.pt'))
 
 def main():
+    # 添加命令行参数解析
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--stage', type=str, choices=['position', 'type'], required=True,
+                      help='Training stage: position (Stage 1) or type (Stage 2)')
+    args = parser.parse_args()
+    
     # 基础配置
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model_name = MODEL_NAME
@@ -94,32 +101,45 @@ def main():
     save_dir = SAVE_DIR
     os.makedirs(save_dir, exist_ok=True)
     
-    
-    # 获取当前文件的绝对路径
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    # 获取guwenbert-large的绝对路径
-    model_path = os.path.join(os.path.dirname(current_dir), 'model', model_name)
-    
-    print(f"尝试加载模型，路径: {model_path}")
-        
-    # 首先初始化tokenizer
-    tokenizer = BertTokenizer.from_pretrained(model_path)
+    # 初始化tokenizer
+    tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_PATH)
     
     # 获取典故类型数量
     train_dataset = PoetryNERDataset(TRAIN_PATH, tokenizer, max_len, task='type')
     num_types = len(train_dataset.type_label2id)
     
-    # 阶段一：典故位置识别
-    print("开始训练阶段一：典故位置识别")
-    model = AllusionBERTCRF(num_types=num_types, task='position').to(device)
+    if args.stage == 'position':
+        # 阶段一：典故位置识别
+        print("开始训练阶段一：典故位置识别")
+        model = AllusionBERTCRF(num_types=num_types, task='position').to(device)
+        
+        # 加载位置识别数据集
+        train_dataset = PoetryNERDataset(TRAIN_PATH, tokenizer, max_len, task='position')
+        val_dataset = PoetryNERDataset(TEST_PATH, tokenizer, max_len, task='position')
+        
+    else:  # args.stage == 'type'
+        # 阶段二：典故类型分类
+        print("开始训练阶段二：典故类型分类")
+        model = AllusionBERTCRF(num_types=num_types, task='type').to(device)
+        
+        # 检查是否存在阶段一的模型
+        position_model_path = os.path.join(save_dir, 'best_model_position.pt')
+        if not os.path.exists(position_model_path):
+            raise FileNotFoundError("请先完成阶段一（position）的训练！")
+            
+        # 加载位置识别模型的参数
+        checkpoint = torch.load(position_model_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        
+        # 加载类型分类数据集
+        train_dataset = PoetryNERDataset(TRAIN_PATH, tokenizer, max_len, task='type')
+        val_dataset = PoetryNERDataset(TEST_PATH, tokenizer, max_len, task='type')
     
-    # 加载位置识别数据集
-    train_dataset = PoetryNERDataset(TRAIN_PATH, tokenizer, max_len, task='position')
-    val_dataset = PoetryNERDataset(TEST_PATH, tokenizer, max_len, task='position')
-    
+    # 创建数据加载器
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size)
     
+    # 优化器和学习率调度器
     optimizer = AdamW(model.parameters(), lr=learning_rate)
     total_steps = len(train_dataloader) * epochs
     scheduler = get_linear_schedule_with_warmup(
@@ -128,33 +148,9 @@ def main():
         num_training_steps=total_steps
     )
     
+    # 训练模型
     train_model(model, train_dataloader, val_dataloader, optimizer, scheduler, 
-                device, epochs, save_dir, 'position')
-    
-    # 阶段二：典故类型分类
-    print("\n开始训练阶段二：典故类型分类")
-    # 加载位置识别模型的参数
-    checkpoint = torch.load(os.path.join(save_dir, 'best_model_position.pt'))
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.task = 'type'  # 切换到类型分类任务
-    
-    # 加载类型分类数据集
-    train_dataset = PoetryNERDataset(TRAIN_PATH, tokenizer, max_len, task='type')
-    val_dataset = PoetryNERDataset(TEST_PATH, tokenizer, max_len, task='type')
-    
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size)
-    
-    optimizer = AdamW(model.parameters(), lr=learning_rate)
-    total_steps = len(train_dataloader) * epochs
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=total_steps * 0.1,
-        num_training_steps=total_steps
-    )
-    
-    train_model(model, train_dataloader, val_dataloader, optimizer, scheduler, 
-                device, epochs, save_dir, 'type')
+                device, epochs, save_dir, args.stage)
 
 if __name__ == '__main__':
     main()

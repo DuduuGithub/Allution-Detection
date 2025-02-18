@@ -3,6 +3,7 @@ from torch.utils.data import Dataset
 import re
 from transformers import BertTokenizer
 import csv
+from torch.utils.data import DataLoader
 
 class PoetryNERDataset(Dataset):
     def __init__(self, file_path, tokenizer, max_len, task='position'):
@@ -235,73 +236,60 @@ class PoetryNERDataset(Dataset):
             'type_labels': torch.tensor(type_ids)
         } 
 
-if __name__ == "__main__":
-    import torch
-    from torch.utils.data import DataLoader
-    from transformers import BertTokenizer
-    import os
+def test_dataset():
+    # 初始化tokenizer
+    tokenizer = BertTokenizer.from_pretrained('model/guwenbert-large')
     
-    def test_dataset_loading():
-        print("开始测试数据集加载...")
-        
-        # 初始化tokenizer
-        tokenizer = BertTokenizer.from_pretrained('model/guwenbert-large')
-        
-        # 创建训练集
-        train_dataset = PoetryNERDataset(
-            file_path='data/final_data.csv',
-            tokenizer=tokenizer,
-            max_len=128
-        )
-        
-        # 创建DataLoader
-        train_loader = DataLoader(
-            train_dataset,
-            batch_size=4,
-            shuffle=True
-        )
-        
-        print(f"\n数据集基本信息:")
-        print(f"数据集大小: {len(train_dataset)}")
-        print(f"位置标签映射: {train_dataset.position_label2id}")
-        print(f"类型标签数量: {len(train_dataset.type_label2id)}")
-        
-        # 测试遍历整个数据集
-        print("\n开始遍历数据集...")
-        total_batches = len(train_loader)
-        
-        try:
-            for batch_idx, batch in enumerate(train_loader):
-                if batch_idx % 100 == 0:  # 每100个batch打印一次进度
-                    print(f"处理进度: {batch_idx}/{total_batches} batches")
-                
-                # 检查batch中的数据
-                assert 'input_ids' in batch
-                assert 'attention_mask' in batch
-                assert 'position_labels' in batch
-                assert 'type_labels' in batch
-                
-                # 检查数据维度
-                assert batch['input_ids'].shape[0] == batch['attention_mask'].shape[0]
-                assert batch['input_ids'].shape[0] == batch['position_labels'].shape[0]
-                assert batch['input_ids'].shape[0] == batch['type_labels'].shape[0]
-            
-            print("\n数据集测试完成！所有数据都可以正确加载。")
-            
-            # 展示第一个batch的详细信息
-            first_batch = next(iter(train_loader))
-            print("\n第一个batch的详细信息:")
-            for key, value in first_batch.items():
-                print(f"\n{key}:")
-                print(f"Shape: {value.shape}")
-                print(f"Type: {value.dtype}")
-                if batch_idx == 0:  # 只打印第一个batch的具体内容
-                    print(f"Content: {value}")
-            
-        except Exception as e:
-            print(f"\n数据集测试失败！错误信息：")
-            print(str(e))
-            raise e
+    # 创建数据集
+    dataset = PoetryNERDataset(
+        file_path='data/merged_data.csv',
+        tokenizer=tokenizer,
+        max_len=128,
+        task='type'  # 使用type任务进行测试
+    )
+    
+    # 创建DataLoader
+    batch_size = 32
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    
+    # 获取一个batch并检查
+    print("\n获取第一个batch进行检查...")
+    batch = next(iter(dataloader))
+    
+    # 检查batch中的数据
+    print("\nBatch 数据形状:")
+    for key, value in batch.items():
+        print(f"{key}: {value.shape}")
+    
+    # 检查position_labels的值
+    print("\nPosition labels 的值分布:")
+    position_labels = batch['position_labels']
+    unique_values, counts = torch.unique(position_labels, return_counts=True)
+    for value, count in zip(unique_values.tolist(), counts.tolist()):
+        print(f"标签 {value} 出现次数: {count}")
+    
+    # 检查每个序列的实际长度
+    print("\n检查每个序列的实际长度:")
+    attention_mask = batch['attention_mask']
+    sequence_lengths = attention_mask.sum(dim=1)
+    print(f"序列长度统计: {sequence_lengths.tolist()}")
+    
+    # 检查是否存在长度不一致的问题
+    print("\n检查数据一致性:")
+    print(f"input_ids 形状: {batch['input_ids'].shape}")
+    print(f"attention_mask 形状: {batch['attention_mask'].shape}")
+    print(f"position_labels 形状: {batch['position_labels'].shape}")
+    
+    # 打印几个完整的序列示例
+    print("\n打印前3个序列的详细信息:")
+    for i in range(min(3, batch_size)):
+        print(f"\n序列 {i+1}:")
+        print(f"实际长度: {sequence_lengths[i]}")
+        print(f"Position labels: {batch['position_labels'][i][:sequence_lengths[i]].tolist()}")
+        # 解码文本
+        tokens = tokenizer.convert_ids_to_tokens(batch['input_ids'][i])
+        text = tokenizer.convert_tokens_to_string(tokens)
+        print(f"文本: {text}")
 
-    # 运行测试
-    test_dataset_loading()
+if __name__ == "__main__":
+    test_dataset()

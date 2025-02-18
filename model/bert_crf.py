@@ -32,18 +32,36 @@ class AllusionBERTCRF(nn.Module):
         
         if self.task == 'position':
             if labels is not None:
-                # 计算平均损失
                 loss = -self.position_crf(position_emissions, labels, mask=mask)
                 return loss.mean()
             else:
-                prediction = self.position_crf.decode(position_emissions, mask=mask)
+                prediction = self.position_crf.viterbi_decode(position_emissions, mask=mask)
                 return prediction
         
         # 类型分类
         elif self.task == 'type':
-            # 获取位置预测
-            position_pred = self.position_crf.decode(position_emissions, mask=mask)
-            position_pred = torch.tensor(position_pred, device=input_ids.device)
+            # 获取CRF预测结果
+            position_pred = self.position_crf.viterbi_decode(position_emissions, mask=mask)
+            
+            # 根据attention_mask获取每个序列的实际长度
+            seq_lengths = attention_mask.sum(dim=1).tolist()
+            
+            # 将预测结果填充到与输入相同的长度
+            batch_size, max_len = input_ids.shape
+            padded_position_pred = torch.zeros((batch_size, max_len), 
+                                            dtype=torch.long, 
+                                            device=input_ids.device)
+            
+            # 对每个序列单独处理
+            for i, (pred, length) in enumerate(zip(position_pred, seq_lengths)):
+                # 确保预测结果不超过实际序列长度
+                pred_length = min(len(pred), length)
+                # 只填充有效长度的部分
+                padded_position_pred[i, :pred_length] = torch.tensor(
+                    pred[:pred_length], 
+                    dtype=torch.long, 
+                    device=input_ids.device
+                )
             
             # 类型分类
             type_emissions = self.type_classifier(sequence_output)
@@ -60,6 +78,6 @@ class AllusionBERTCRF(nn.Module):
                 total_loss = position_loss.mean() + type_loss.mean()
                 return total_loss
             else:
-                # 推理时，只对预测为典故的位置(B或I)进行类型预测
-                type_pred = self.type_crf.decode(type_emissions, mask=mask)
-                return position_pred, type_pred
+                # 使用 viterbi_decode 替换 decode
+                type_pred = self.type_crf.viterbi_decode(type_emissions, mask=mask)
+                return padded_position_pred, type_pred
