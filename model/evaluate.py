@@ -3,10 +3,11 @@ from torch.utils.data import DataLoader
 from transformers import BertTokenizer
 from poetry_dataset import PoetryNERDataset
 from bert_crf import AllusionBERTCRF
-from config import BERT_MODEL_PATH, TEST_PATH, MAX_SEQ_LEN, SAVE_DIR
+from config import BERT_MODEL_PATH, TEST_PATH, MAX_SEQ_LEN, SAVE_DIR, ALLUSION_TYPES_PATH
 import os
 from sklearn.metrics import classification_report, precision_recall_fscore_support
 import numpy as np
+from utils import load_allusion_types
 
 def evaluate_model(model, dataloader, device, task='position'):
     model.eval()
@@ -86,7 +87,9 @@ def main():
     test_dataloader = DataLoader(test_dataset, batch_size=32, shuffle=False)
     
     # 获取典故类型数量
-    num_types = len(test_dataset.type_label2id)
+    type_label2id, _ = load_allusion_types(ALLUSION_TYPES_PATH)
+    num_types = len(type_label2id)
+    print(f"Total number of allusion types: {num_types}")
     
     # 评估位置识别模型
     print("\nEvaluating Position Detection Model...")

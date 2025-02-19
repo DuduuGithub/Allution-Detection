@@ -4,6 +4,8 @@ import re
 from transformers import BertTokenizer
 import csv
 from torch.utils.data import DataLoader
+from utils import load_allusion_types
+from config import ALLUSION_TYPES_PATH
 
 class PoetryNERDataset(Dataset):
     def __init__(self, file_path, tokenizer, max_len, task='position'):
@@ -26,8 +28,8 @@ class PoetryNERDataset(Dataset):
             'I': 2
         }
         
-        # 首先收集所有典故类型并创建映射
-        self.collect_allusion_types()
+        # 从固定文件加载类型映射
+        self.type_label2id, self.id2type_label = load_allusion_types(ALLUSION_TYPES_PATH)
         
         # 然后加载数据
         self.data = self.read_data(file_path)
@@ -206,9 +208,8 @@ class PoetryNERDataset(Dataset):
         item = self.data[idx]
         text = item['text']
         position_labels = item['position_labels']
-        type_labels = item['type_labels']
         
-        # 对诗句进行编码
+        # tokenizer处理
         encoding = self.tokenizer(
             text,
             max_length=self.max_len,
@@ -217,24 +218,20 @@ class PoetryNERDataset(Dataset):
             return_tensors='pt'
         )
         
-        # 转换标签为id
-        position_ids = [self.position_label2id[label] for label in position_labels]
-        type_ids = [self.type_label2id[label] for label in type_labels]
-        
-        # 填充标签序列
-        if len(position_ids) < self.max_len:
-            position_ids = position_ids + [0] * (self.max_len - len(position_ids))
-            type_ids = type_ids + [0] * (self.max_len - len(type_ids))
-        else:
-            position_ids = position_ids[:self.max_len]
-            type_ids = type_ids[:self.max_len]
-        
-        return {
+        # 准备返回数据
+        result = {
             'input_ids': encoding['input_ids'].squeeze(0),
             'attention_mask': encoding['attention_mask'].squeeze(0),
-            'position_labels': torch.tensor(position_ids),
-            'type_labels': torch.tensor(type_ids)
-        } 
+            'position_labels': torch.tensor(position_labels)
+        }
+        
+        # 如果是类型分类任务，添加类型标签
+        if self.task == 'type' and 'type_labels' in item:
+            # 确保使用统一的类型映射
+            type_labels = [self.type_label2id.get(t, 0) for t in item['type_labels']]
+            result['type_labels'] = torch.tensor(type_labels)
+            
+        return result
 
 def test_dataset():
     # 初始化tokenizer

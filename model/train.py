@@ -7,6 +7,7 @@ from bert_crf import AllusionBERTCRF
 import os
 from config import MODEL_NAME, BERT_MODEL_PATH, MAX_SEQ_LEN, BATCH_SIZE, EPOCHS, LEARNING_RATE, TRAIN_PATH, TEST_PATH, SAVE_DIR, ALLUSION_TYPES_PATH
 import argparse
+from utils import load_allusion_types
 
 def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler, device, num_epochs, save_dir, task):
     best_val_loss = float('inf')
@@ -105,8 +106,9 @@ def main():
     tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_PATH)
     
     # 获取典故类型数量
-    train_dataset = PoetryNERDataset(TRAIN_PATH, tokenizer, max_len, task='type')
-    num_types = len(train_dataset.type_label2id)
+    type_label2id, _ = load_allusion_types(ALLUSION_TYPES_PATH)
+    num_types = len(type_label2id)
+    print(f"Total number of allusion types: {num_types}")
     
     if args.stage == 'position':
         # 阶段一：典故位置识别
