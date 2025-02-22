@@ -7,7 +7,6 @@ from bert_crf import AllusionBERTCRF
 import os
 from config import MODEL_NAME, BERT_MODEL_PATH, MAX_SEQ_LEN, BATCH_SIZE, EPOCHS, LEARNING_RATE, TRAIN_PATH, TEST_PATH, SAVE_DIR, ALLUSION_TYPES_PATH
 import argparse
-from utils import load_allusion_types
 
 def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler, device, num_epochs, save_dir, task):
     best_val_loss = float('inf')

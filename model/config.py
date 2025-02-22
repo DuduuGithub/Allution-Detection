@@ -14,7 +14,7 @@ LEARNING_RATE = 2e-5
 TRAIN_PATH = 'data/train.csv'
 TEST_PATH = 'data/test.csv'   
 SAVE_DIR = 'output'
-ALLUSION_TYPES_PATH = 'data/allusion_types.txt'
+ALLUSION_TYPES_PATH = 'data/updated_典故的异性数据.csv'
 
 # 标签配置
 POSITION_LABELS = {

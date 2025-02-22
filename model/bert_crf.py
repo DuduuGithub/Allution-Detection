@@ -1,83 +1,92 @@
 import torch
 import torch.nn as nn
-from transformers import BertModel
+from transformers import BertModel, BertTokenizer
 from TorchCRF import CRF
+import difflib
 
 from config import BERT_MODEL_PATH
+
 class AllusionBERTCRF(nn.Module):
-    def __init__(self, num_types, task='position'):
-        super(AllusionBERTCRF, self).__init__()
-        
-        self.bert = BertModel.from_pretrained(BERT_MODEL_PATH)
-        self.dropout = nn.Dropout(0.1)
-        
-        # 修改位置识别分类器为3分类：B/I/O
-        self.position_classifier = nn.Linear(self.bert.config.hidden_size, 3)
-        self.position_crf = CRF(3)  # 修改为3个标签状态
-        
-        # 类型分类器
-        self.type_classifier = nn.Linear(self.bert.config.hidden_size, num_types)
-        self.type_crf = CRF(num_types)
-        
-        self.task = task
     
-    def forward(self, input_ids, attention_mask, labels=None, type_labels=None):
-        outputs = self.bert(input_ids, attention_mask=attention_mask)
-        sequence_output = outputs[0]
-        sequence_output = self.dropout(sequence_output)
+    #num_types: 类型数量 需要在使用时通过建立allution_types.txt的映射关系的同时获得
+    def __init__(self, bert_path, num_types,task):
+        super(AllusionBERTCRF, self).__init__()
+        self.task = task
+        # BERT基础模型
+        self.bert = BertModel.from_pretrained(bert_path)
+        self.bert_hidden_size = self.bert.config.hidden_size
         
-        # 位置识别 (B/I/O)
-        position_emissions = self.position_classifier(sequence_output)
-        mask = attention_mask.bool()
+        # BiLSTM层
+        self.lstm_hidden_size = 256
+        self.num_lstm_layers = 2
+        self.bilstm = nn.LSTM(
+            input_size=self.bert_hidden_size + self.dict_size,  # BERT输出 + 字典特征向量
+            hidden_size=self.lstm_hidden_size,
+            num_layers=self.num_lstm_layers,
+            bidirectional=True,
+            batch_first=True
+        )
+        
+        # 位置识别模块 (B/I/O)
+        self.position_classifier = nn.Linear(self.lstm_hidden_size * 2, 3)
+        self.position_crf = CRF(3, batch_first=True)
+        
+        # 类别识别模块
+        self.type_classifier = nn.Linear(self.lstm_hidden_size * 2, num_types)
+
+    def forward(self, input_ids, attention_mask, dict_features, target_positions=None, position_labels=None, type_labels=None):
+        """
+        前向传播
+        Args:
+            input_ids: 输入的token ids
+            attention_mask: 注意力掩码
+            dict_features: 预处理得到的字典特征向量 [batch_size, seq_len, dict_size]
+            target_positions: 待判断词的位置索引 [batch_size, 2] (start, end)
+            position_labels: 位置标签 (B/I/O)
+            type_labels: 类型标签
+        """
+        # BERT编码
+        outputs = self.bert(input_ids, attention_mask=attention_mask)
+        sequence_output = outputs[0]  # [batch_size, seq_len, bert_hidden]
+        
+        # 特征拼接
+        combined_features = torch.cat([sequence_output, dict_features], dim=-1)
+        
+        # BiLSTM处理
+        lstm_output, _ = self.bilstm(combined_features)
         
         if self.task == 'position':
-            if labels is not None:
-                loss = -self.position_crf(position_emissions, labels, mask=mask)
+            # 位置识别 (B/I/O)
+            position_emissions = self.position_classifier(lstm_output)
+            mask = attention_mask.bool()
+            
+            if position_labels is not None:
+                loss = -self.position_crf(position_emissions, position_labels, mask=mask)
                 return loss.mean()
             else:
                 prediction = self.position_crf.viterbi_decode(position_emissions, mask=mask)
                 return prediction
         
-        # 类型分类
         elif self.task == 'type':
-            # 获取CRF预测结果
-            position_pred = self.position_crf.viterbi_decode(position_emissions, mask=mask)
+            # 获取目标位置的特征
+            batch_size = input_ids.size(0)
+            target_features = []
             
-            # 根据attention_mask获取每个序列的实际长度
-            seq_lengths = attention_mask.sum(dim=1).tolist()
+            # 对每个样本提取目标位置的特征
+            for i in range(batch_size):
+                start, end = target_positions[i]
+                # 提取目标位置的特征并进行平均池化
+                span_features = lstm_output[i, start:end+1].mean(dim=0)
+                target_features.append(span_features)
             
-            # 将预测结果填充到与输入相同的长度
-            batch_size, max_len = input_ids.shape
-            padded_position_pred = torch.zeros((batch_size, max_len), 
-                                            dtype=torch.long, 
-                                            device=input_ids.device)
-            
-            # 对每个序列单独处理
-            for i, (pred, length) in enumerate(zip(position_pred, seq_lengths)):
-                # 确保预测结果不超过实际序列长度
-                pred_length = min(len(pred), length)
-                # 只填充有效长度的部分
-                padded_position_pred[i, :pred_length] = torch.tensor(
-                    pred[:pred_length], 
-                    dtype=torch.long, 
-                    device=input_ids.device
-                )
+            target_features = torch.stack(target_features)  # [batch_size, lstm_hidden*2]
             
             # 类型分类
-            type_emissions = self.type_classifier(sequence_output)
+            type_logits = self.type_classifier(target_features)  # [batch_size, num_types]
             
             if type_labels is not None:
-                # 只在预测为典故的位置(B或I)计算类型损失
-                position_loss = -self.position_crf(position_emissions, labels, mask=mask)
-                
-                # 创建类型预测的mask（只在典故位置B或I计算损失）
-                type_mask = ((labels == 1) | (labels == 2)) & mask  # B=1, I=2
-                type_loss = -self.type_crf(type_emissions, type_labels, mask=type_mask)
-                
-                # 计算平均损失
-                total_loss = position_loss.mean() + type_loss.mean()
-                return total_loss
+                loss = nn.CrossEntropyLoss()(type_logits, type_labels)
+                return loss
             else:
-                # 使用 viterbi_decode 替换 decode
-                type_pred = self.type_crf.viterbi_decode(type_emissions, mask=mask)
-                return padded_position_pred, type_pred
+                type_pred = torch.argmax(type_logits, dim=-1)
+                return type_pred

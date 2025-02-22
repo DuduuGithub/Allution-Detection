@@ -1,6 +1,5 @@
 from transformers import BertTokenizer
-from poetry_dataset import PoetryNERDataset
-from utils import load_allusion_types
+from poetry_dataset import PoetryNERDataset, load_allusion_types
 from config import BERT_MODEL_PATH, TEST_PATH, ALLUSION_TYPES_PATH
 
 def test_type_loading():

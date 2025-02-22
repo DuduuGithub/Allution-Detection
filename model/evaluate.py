@@ -1,13 +1,13 @@
 import torch
 from torch.utils.data import DataLoader
 from transformers import BertTokenizer
-from poetry_dataset import PoetryNERDataset
+from poetry_dataset import PoetryNERDataset, load_allusion_types
 from bert_crf import AllusionBERTCRF
 from config import BERT_MODEL_PATH, TEST_PATH, MAX_SEQ_LEN, SAVE_DIR, ALLUSION_TYPES_PATH
 import os
 from sklearn.metrics import classification_report, precision_recall_fscore_support
 import numpy as np
-from utils import load_allusion_types
+
 
 def evaluate_model(model, dataloader, device, task='position'):
     model.eval()
@@ -40,11 +40,24 @@ def evaluate_model(model, dataloader, device, task='position'):
                 predictions = padded_predictions
             else:  # task == 'type'
                 position_pred, type_pred = model(input_ids, attention_mask)
-                predictions = type_pred  # 使用类型预测
+                # type_pred 是一个列表，需要转换为张量
+                batch_size, max_len = input_ids.shape
+                padded_predictions = torch.zeros((batch_size, max_len), 
+                                              dtype=torch.long, 
+                                              device=device)
+                for i, (pred, length) in enumerate(zip(type_pred, seq_lengths)):
+                    pred_length = min(len(pred), length)
+                    padded_predictions[i, :pred_length] = torch.tensor(
+                        pred[:pred_length], 
+                        dtype=torch.long, 
+                        device=device
+                    )
+                predictions = padded_predictions
                 position_labels = batch['type_labels'].to(device)  # 使用类型标签
             
             # 只考虑非填充部分的预测和标签
             for pred, label, length in zip(predictions, position_labels, seq_lengths):
+                # 现在 pred 已经是张量了，可以使用 cpu()
                 all_predictions.extend(pred[:length].cpu().tolist())
                 all_labels.extend(label[:length].cpu().tolist())
     
