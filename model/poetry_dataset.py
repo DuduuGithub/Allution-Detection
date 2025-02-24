@@ -5,31 +5,9 @@ from transformers import BertTokenizer
 import csv
 from torch.utils.data import DataLoader
 from config import ALLUSION_TYPES_PATH
-
-
-
-def load_allusion_types(file_path):
-    """从CSV文件加载典故类型映射"""
-    type_label2id = {}
-    id2type_label = {}
-    with open(file_path, 'r', encoding='utf-8') as f:
-        next(f)
-        types = []
-        for line in f:
-            if not line.strip():
-                continue
-            allusion_name = line.strip().split('\t')[0] 
-            types.append(allusion_name)
-    
-    # 创建双向映射
-    for idx, type_label in enumerate(sorted(types)):
-        type_label2id[type_label] = idx
-        id2type_label[idx] = type_label
-    
-    return type_label2id, id2type_label
     
 class PoetryNERDataset(Dataset):
-    def __init__(self, file_path, tokenizer, max_len, task='position'):
+    def __init__(self, file_path, tokenizer, max_len,type_label2id,id2type_label, task='position'):
         """
         Args:
             file_path: 数据文件路径
@@ -50,7 +28,8 @@ class PoetryNERDataset(Dataset):
         }
         
         # 从固定文件加载类型映射
-        self.type_label2id, self.id2type_label = load_allusion_types(ALLUSION_TYPES_PATH)
+        self.type_label2id=type_label2id
+        self.id2type_label=id2type_label
         
         # 加载数据
         self.data = self.read_data(file_path)
@@ -104,14 +83,61 @@ class PoetryNERDataset(Dataset):
         
         return position_ids, type_ids
     
+    def read_data(self, file_path):
+        """读取数据文件"""
+        dataset = []
+        with open(file_path, 'r', encoding='utf-8') as f:
+            next(f)  # 跳过标题行
+            for line in f:
+                if not line.strip() or '\t' not in line:
+                    continue
+                text, allusions = self.parse_line(line)
+                position_labels, type_labels = self.create_labels(text, allusions)
+                
+                if self.task == 'position':
+                    dataset.append({
+                        'text': text,
+                        'position_labels': position_labels,
+                    })
+                else:  # task == 'type'
+                    # 为每个典故创建一个单独的样本
+                    allusion_positions = self.get_allusion_positions(position_labels, type_labels)
+                    for start, end, type_label in allusion_positions:
+                        dataset.append({
+                            'text': text,
+                            'position_labels': position_labels,
+                            'type_labels': type_labels,
+                            'target_positions': (start, end),
+                            'target_type': type_label
+                        })
+        
+        return dataset
+
+    def get_allusion_positions(self, position_labels, type_labels):
+        """提取所有典故的位置和类型"""
+        allusion_positions = []
+        i = 0
+        while i < len(position_labels):
+            if position_labels[i] == self.position_label2id['B']:
+                start = i
+                end = i
+                # 寻找典故结束位置
+                for j in range(i + 1, len(position_labels)):
+                    if position_labels[j] == self.position_label2id['I']:
+                        end = j
+                    else:
+                        break
+                allusion_positions.append((start, end, type_labels[start]))
+                i = end + 1
+            else:
+                i += 1
+        return allusion_positions
+
     def __getitem__(self, idx):
         """获取单个样本"""
         item = self.data[idx]
         text = item['text']
-        position_labels = item['position_labels']
-        type_labels = item['type_labels'] if 'type_labels' in item else None
         
-        # tokenizer处理
         encoding = self.tokenizer(
             text,
             max_length=self.max_len,
@@ -120,62 +146,26 @@ class PoetryNERDataset(Dataset):
             return_tensors='pt'
         )
         
-        # 确保标签长度与输入一致
-        if len(position_labels) > self.max_len:
-            position_labels = position_labels[:self.max_len]
-        else:
-            position_labels = position_labels + [0] * (self.max_len - len(position_labels))
-        
-        # 准备返回数据
         result = {
             'input_ids': encoding['input_ids'].squeeze(0),
             'attention_mask': encoding['attention_mask'].squeeze(0),
-            'position_labels': torch.tensor(position_labels, dtype=torch.long)
+            'text': text  # 添加原始文本
         }
         
-        # 如果是类型分类任务且有类型标签
-        if self.task == 'type' and type_labels is not None:
-            if len(type_labels) > self.max_len:
-                type_labels = type_labels[:self.max_len]
+        if self.task == 'position':
+            position_labels = item['position_labels']
+            if len(position_labels) > self.max_len:
+                position_labels = position_labels[:self.max_len]
             else:
-                type_labels = type_labels + [0] * (self.max_len - len(type_labels))
-            result['type_labels'] = torch.tensor(type_labels, dtype=torch.long)
-        
+                position_labels = position_labels + [0] * (self.max_len - len(position_labels))
+            
+            result['position_labels'] = torch.tensor(position_labels, dtype=torch.long)
+            
+        else: 
+            result['target_positions'] = torch.tensor(item['target_positions'], dtype=torch.long)
+            result['type_labels'] = torch.tensor(item['target_type'], dtype=torch.long)
+            
         return result
-    
+
     def __len__(self):
         return len(self.data)
-    
-    def read_data(self, file_path):
-        """读取数据文件"""
-        dataset = []
-        total_lines = 0
-        
-        print(f"开始读取数据文件: {file_path}")
-        
-        with open(file_path, 'r', encoding='utf-8') as f:
-            # 跳过标题行
-            header = next(f)    # next会读取迭代器所在行的内容，迭代器移动到下一行 ···
-            print(f"文件头: {header.strip()}")
-            
-            for line_num, line in enumerate(f, 1): # enumerate会把一个可迭代对象，选择一个起始值，获得一个产生两个值：索引 元素 的迭代器···
-                total_lines += 1
-                if not line.strip() or '\t' not in line:
-                    continue
-                    
-                # 解析行数据
-                text, allusions = self.parse_line(line)
-                
-                # 创建标签序列
-                position_labels, type_labels = self.create_labels(text, allusions)
-                
-                dataset.append({
-                    'text': text,
-                    'position_labels': position_labels,
-                    'type_labels': type_labels
-                })
-        
-        print(f"\n数据加载统计:")
-        print(f"成功加载样本数: {len(dataset)}")
-        print(f"\n数据加载完成···:")
-        return dataset
