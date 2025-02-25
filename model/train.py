@@ -13,7 +13,7 @@ from config import (
 import argparse
 import pandas as pd
 
-def load_allusion_dict(dict_file='data/典故的代表词组.csv'):
+def load_allusion_dict(dict_file='data/allusion_representative.csv'):
     """加载典故词典并创建类型映射
     
     Returns:

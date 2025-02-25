@@ -60,6 +60,27 @@ class AllusionBERTCRF(nn.Module):
             }
         Returns:
             tensor: [batch_size, seq_len, 256]
+            
+        # indices张量示例 (max_active=5)
+        indices[0] = [
+            [1, 0, 0, 0, 0],  # 位置0：只有1个典故
+            [2, 3, 4, 0, 0],  # 位置1：有3个典故
+            [0, 0, 0, 0, 0],  # 位置2：没有典故
+            [5, 6, 7, 8, 0],  # 位置3：有4个典故
+            [9, 0, 0, 0, 0]   # 位置4：有1个典故
+        ]
+
+        # values张量示例
+        values[0] = [
+            [0.9, 0.0, 0.0, 0.0, 0.0],  # 位置0
+            [0.8, 0.7, 0.6, 0.0, 0.0],  # 位置1
+            [0.0, 0.0, 0.0, 0.0, 0.0],  # 位置2
+            [0.9, 0.8, 0.7, 0.6, 0.0],  # 位置3
+            [0.9, 0.0, 0.0, 0.0, 0.0]   # 位置4
+        ]
+
+        # active_counts记录实际数量
+        active_counts[0] = [1, 3, 0, 4, 1]
         """
         batch_size, seq_len, max_active = dict_features['indices'].shape
         
@@ -76,7 +97,7 @@ class AllusionBERTCRF(nn.Module):
         # [batch_size*seq_len, max_active, 256]
         weighted_features = embedded_features * flat_values.unsqueeze(-1)
         
-        # 4. 对每个位置的特征求和
+        # 4. 对每个位置的特征求和 在多个典故的维度上求和
         # [batch_size*seq_len, 256]
         summed_features = weighted_features.sum(dim=1)
         
@@ -169,41 +190,90 @@ class AllusionBERTCRF(nn.Module):
                 return type_pred
 
 def prepare_sparse_features(batch_texts, allusion_dict, max_active=5):
-    """将文本批量转换为稀疏特征格式"""
+    """将文本批量转换为稀疏特征格式
+    
+    对每个起始位置，尝试长度2~5的窗口，找出最佳匹配的典故
+    """
     batch_size = len(batch_texts)
     seq_len = max(len(text) for text in batch_texts)
     
-    # 初始化存储张量
-    indices = torch.zeros((batch_size, seq_len, max_active), dtype=torch.long)
-    values = torch.zeros((batch_size, seq_len, max_active), dtype=torch.float)
-    active_counts = torch.zeros((batch_size, seq_len), dtype=torch.long)
+    # 初始化每个位置的典故匹配列表
+    position_to_allusions = [[] for _ in range(seq_len)]  # 每个位置可能的典故列表
     
     # 为每个典故分配ID
     allusion_to_id = {name: idx for idx, name in enumerate(allusion_dict.keys())}
     
+    def get_variants(variants):
+        """获取变体列表"""
+        if isinstance(variants, list):
+            # 如果是列表但只有一个元素且是字符串，可能需要进一步解析
+            if len(variants) == 1 and isinstance(variants[0], str):
+                try:
+                    # 尝试解析可能的嵌套列表
+                    parsed = eval(variants[0])
+                    if isinstance(parsed, list):
+                        return parsed
+                except:
+                    pass
+            return variants
+            
+        if isinstance(variants, str):
+            try:
+                # 尝试解析字符串形式的列表
+                parsed = eval(variants)
+                if isinstance(parsed, list):
+                    # 如果解析出的是列表，递归处理可能的嵌套
+                    return get_variants(parsed)
+                return [variants]
+            except:
+                # 如果解析失败，按分号分割
+                return variants.split(';')
+                
+        return []  # 兜底返回空列表
+    
     # 处理每个样本
     for b, text in enumerate(batch_texts):
-        for pos in range(len(text)):
-            context = text[max(0, pos-2):min(len(text), pos+3)]
+        # 对每个起始位置
+        for start_pos in range(len(text)-1):
+            max_len = min(5, len(text) - start_pos)
             
-            # 匹配典故
-            matches = []
-            for allusion_name, variants in allusion_dict.items():
-                max_similarity = max(
-                    SequenceMatcher(None, context, variant).ratio()
-                    for variant in variants
-                )
+            # 尝试不同长度的窗口
+            for window_size in range(2, max_len + 1):
+                context = text[start_pos:start_pos + window_size]
+                end_pos = start_pos + window_size - 1
                 
-                # 使用config.py中定义的OPTIMAL_EPS
-                if max_similarity > OPTIMAL_EPS:
-                    matches.append((
-                        allusion_to_id[allusion_name],
-                        max_similarity
-                    ))
-            
-            # 按相似度排序并取top-k
+                # 匹配典故
+                for allusion_name, variants in allusion_dict.items():
+                    variant_list = get_variants(variants)
+                    max_similarity = 0
+                    
+                    # 找出该典故在当前位置的最高相似度
+                    for variant in variant_list:
+                        similarity = SequenceMatcher(None, context, variant).ratio()
+                        if similarity > max_similarity:
+                            max_similarity = similarity
+                            
+                    
+                    # 计算距离
+                    distance = 1 - max_similarity
+                    if distance < OPTIMAL_EPS:
+                        # 将该典故添加到范围内的每个位置
+                        for pos in range(start_pos, end_pos + 1):
+                            position_to_allusions[pos].append((
+                                allusion_to_id[allusion_name],
+                                max_similarity
+                            ))
+        
+        # 为每个位置选择最佳的max_active个典故
+        indices = torch.zeros((batch_size, seq_len, max_active), dtype=torch.long)
+        values = torch.zeros((batch_size, seq_len, max_active), dtype=torch.float)
+        active_counts = torch.zeros((batch_size, seq_len), dtype=torch.long)
+        
+        for pos in range(seq_len):
+            # 对该位置的所有典故按相似度排序
+            matches = position_to_allusions[pos]
             matches.sort(key=lambda x: x[1], reverse=True)
-            matches = matches[:max_active]
+            matches = matches[:max_active]  # 只保留最佳的max_active个
             
             # 记录匹配数量和结果
             active_counts[b, pos] = len(matches)

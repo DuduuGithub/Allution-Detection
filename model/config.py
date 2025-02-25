@@ -10,6 +10,8 @@ BATCH_SIZE = 32
 EPOCHS = 10
 LEARNING_RATE = 2e-5
 
+
+
 # 路径配置
 TRAIN_PATH = 'data/train.csv'
 TEST_PATH = 'data/test.csv'   

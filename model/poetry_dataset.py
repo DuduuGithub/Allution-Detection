@@ -68,6 +68,10 @@ class PoetryNERDataset(Dataset):
         position_labels = ['O'] * len(text) 
         type_labels = ['O'] * len(text)      
         
+        # 如果没有典故（variation_number为0），直接返回全O标签
+        if not allusions:
+            return [self.position_label2id['O']] * len(text), [-1] * len(text)
+        
         for positions, allusion_type in allusions:
             if positions:  
                 position_labels[positions[0]] = 'B'
@@ -77,7 +81,7 @@ class PoetryNERDataset(Dataset):
                 for pos in positions:
                     type_labels[pos] = allusion_type
         
-        # 将标签转换为ID，如果没有对应标签，则使用-1 为id
+        # 将标签转换为ID
         position_ids = [self.position_label2id[label] for label in position_labels]
         type_ids = [self.type_label2id.get(label, -1) for label in type_labels]
         
