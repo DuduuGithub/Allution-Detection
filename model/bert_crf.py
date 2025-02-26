@@ -3,8 +3,9 @@ import torch.nn as nn
 from transformers import BertModel, BertTokenizer
 from TorchCRF import CRF
 from scipy.sparse import csr_matrix
-from config import BERT_MODEL_PATH, OPTIMAL_EPS
+from config import BERT_MODEL_PATH
 from difflib import SequenceMatcher
+from config import OPTIMAL_EPS,min_samples_size
 
 class AllusionBERTCRF(nn.Module):
     
@@ -136,8 +137,8 @@ class AllusionBERTCRF(nn.Module):
             attention_mask: 注意力掩码
             dict_features: 稀疏特征字典
             task: 'position' 或 'type'，指定当前任务
-            position_labels: 位置标签 (B/I/O)
-            type_labels: 类型标签
+            position_labels: 位置标签 (B/I/O)    已考虑[CLS]和[SEP]
+            type_labels: 类型标签    已考虑[CLS]和[SEP]
             target_positions: 待判断词的位置索引 [batch_size, 2] (start, end)
         """
         # 1. BERT编码
@@ -159,10 +160,19 @@ class AllusionBERTCRF(nn.Module):
             mask = attention_mask.bool()
             
             if position_labels is not None:
-                loss = -self.position_crf(position_emissions, position_labels, mask=mask)
+                # 忽略CLS和SEP的损失计算
+                loss = -self.position_crf(
+                    position_emissions[:, 1:-1, :],  # 去掉CLS和SEP
+                    position_labels[:, 1:-1],        # 去掉CLS和SEP
+                    mask=mask[:, 1:-1]               # 去掉CLS和SEP
+                )
                 return loss.mean()
             else:
-                prediction = self.position_crf.viterbi_decode(position_emissions, mask=mask)
+                # 预测时也忽略CLS和SEP
+                prediction = self.position_crf.viterbi_decode(
+                    position_emissions[:, 1:-1, :],
+                    mask=mask[:, 1:-1]
+                )
                 return prediction
         
         elif task == 'type':
@@ -190,10 +200,7 @@ class AllusionBERTCRF(nn.Module):
                 return type_pred
 
 def prepare_sparse_features(batch_texts, allusion_dict, max_active=5):
-    """将文本批量转换为稀疏特征格式
-    
-    对每个起始位置，尝试长度2~5的窗口，找出最佳匹配的典故
-    """
+    """将文本批量转换为稀疏特征格式"""
     batch_size = len(batch_texts)
     seq_len = max(len(text) for text in batch_texts)
     
@@ -281,9 +288,19 @@ def prepare_sparse_features(batch_texts, allusion_dict, max_active=5):
                 indices[b, pos, idx] = allusion_id
                 values[b, pos, idx] = similarity
     
+    # 在返回前添加CLS和SEP的处理
+    padded_indices = torch.zeros((batch_size, seq_len + 2, max_active), dtype=torch.long)
+    padded_values = torch.zeros((batch_size, seq_len + 2, max_active), dtype=torch.float)
+    padded_active_counts = torch.zeros((batch_size, seq_len + 2), dtype=torch.long)
+    
+    # 将原始特征放在中间位置（跳过CLS）
+    padded_indices[:, 1:seq_len+1, :] = indices
+    padded_values[:, 1:seq_len+1, :] = values
+    padded_active_counts[:, 1:seq_len+1] = active_counts
+    
     return {
-        'indices': indices,
-        'values': values,
-        'active_counts': active_counts
+        'indices': padded_indices,
+        'values': padded_values,
+        'active_counts': padded_active_counts
     }
 

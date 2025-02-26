@@ -146,7 +146,7 @@ def cluster_with_dbscan(words, eps):
 
 
 def process_allusion_variants(input_file='data/updated_典故的异性数据.csv', 
-                            output_file='data/allusion_representative.csv',
+                            output_file='data/cleared_allusion_type.csv',
                             eps=None):
     """处理典故异形词数据，生成代表词文件"""
     print(f"读取数据文件: {input_file}")

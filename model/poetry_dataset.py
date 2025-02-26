@@ -4,7 +4,6 @@ import re
 from transformers import BertTokenizer
 import csv
 from torch.utils.data import DataLoader
-from config import ALLUSION_TYPES_PATH
     
 class PoetryNERDataset(Dataset):
     def __init__(self, file_path, tokenizer, max_len,type_label2id,id2type_label, task='position'):
@@ -37,55 +36,59 @@ class PoetryNERDataset(Dataset):
     
     
     def parse_line(self, line):
-        """解析单行数据，提取诗句和典故位置"""
-        
-        parts = line.strip().split('\t')  
-        
-        #诗句提取      
-        sentence = parts[0]
-                
-        #典故提取
-        allusion_info = parts[6].strip()  
-        allusion_parts = allusion_info.split(';')
-        allusions = []
-        for part in allusion_parts:
-            part = part.strip()
-            if not part:  # 跳过空字符串
-                continue
-
-            part = part.strip('[]')
-            items = [item.strip() for item in part.split(',')]        
-            positions = [int(pos) for pos in items[:-1]]
-            allusion_type = items[-1]
+        """解析单行数据，提取诗句和标签"""
+        parts = line.strip().split('\t')
+        try:
+            # 获取基本信息
+            text = parts[0].strip()
+            variation_number = int(parts[4])
             
-            allusions.append((positions, allusion_type))
+            # 如果没有典故（variation_number为0），直接返回全O标签
+            if variation_number == 0:
+                position_labels = [self.position_label2id['O']] * len(text)
+                type_labels = [-1] * len(text)
+                return text, position_labels, type_labels
             
-        return sentence, allusions
-        
-    
-    def create_labels(self, text, allusions):
-        """根据典故位置创建BIO标签和类型标签"""
-        position_labels = ['O'] * len(text) 
-        type_labels = ['O'] * len(text)      
-        
-        # 如果没有典故（variation_number为0），直接返回全O标签
-        if not allusions:
-            return [self.position_label2id['O']] * len(text), [-1] * len(text)
-        
-        for positions, allusion_type in allusions:
-            if positions:  
-                position_labels[positions[0]] = 'B'
-                for pos in positions[1:]:
-                    position_labels[pos] = 'I'
+            # 处理有典故的情况
+            allusion_info = parts[6].strip()
+            allusion_parts = allusion_info.split(';')
+            
+            # 初始化标签序列
+            position_labels = ['O'] * len(text)
+            type_labels = ['O'] * len(text) # 'O'表示非典故
+            
+            # 处理每个典故
+            for part in allusion_parts:
+                part = part.strip()
+                if not part:  # 跳过空字符串
+                    continue
                 
-                for pos in positions:
-                    type_labels[pos] = allusion_type
+                part = part.strip('[]')
+                items = [item.strip() for item in part.split(',')]
+                positions = [int(pos) for pos in items[:-1]]
+                allusion_type = items[-1]
+                
+                # 设置位置标签
+                if positions:
+                    position_labels[positions[0]] = 'B'
+                    for pos in positions[1:]:
+                        position_labels[pos] = 'I'
+                    
+                    # 设置类型标签
+                    for pos in positions:
+                        type_labels[pos] = allusion_type
+            
+            # 将标签转换为ID
+            position_ids = [self.position_label2id[label] for label in position_labels]
+            type_ids = [self.type_label2id.get(label, -1) for label in type_labels]
+            
+            return text, position_ids, type_ids
+            
+        except (ValueError, IndexError) as e:
+            print(f"Error parsing line: {line}")
+            print(f"Error details: {str(e)}")
+            return None
         
-        # 将标签转换为ID
-        position_ids = [self.position_label2id[label] for label in position_labels]
-        type_ids = [self.type_label2id.get(label, -1) for label in type_labels]
-        
-        return position_ids, type_ids
     
     def read_data(self, file_path):
         """读取数据文件"""
@@ -95,8 +98,11 @@ class PoetryNERDataset(Dataset):
             for line in f:
                 if not line.strip() or '\t' not in line:
                     continue
-                text, allusions = self.parse_line(line)
-                position_labels, type_labels = self.create_labels(text, allusions)
+                result = self.parse_line(line)
+                if result is None:
+                    continue
+                
+                text, position_labels, type_labels = result # 这些都是标号
                 
                 if self.task == 'position':
                     dataset.append({
@@ -139,37 +145,108 @@ class PoetryNERDataset(Dataset):
 
     def __getitem__(self, idx):
         """获取单个样本"""
-        item = self.data[idx]
-        text = item['text']
+        text = self.data[idx]['text']
+        position_labels = self.data[idx]['position_labels']
         
+        # BERT tokenization
         encoding = self.tokenizer(
             text,
-            max_length=self.max_len,
-            padding='max_length',
-            truncation=True,
+            add_special_tokens=True,  # 添加[CLS]和[SEP]
             return_tensors='pt'
         )
         
-        result = {
-            'input_ids': encoding['input_ids'].squeeze(0),
-            'attention_mask': encoding['attention_mask'].squeeze(0),
-            'text': text  # 添加原始文本
-        }
+        input_ids = encoding['input_ids'].squeeze(0)
+        attention_mask = encoding['attention_mask'].squeeze(0)
         
-        if self.task == 'position':
-            position_labels = item['position_labels']
-            if len(position_labels) > self.max_len:
-                position_labels = position_labels[:self.max_len]
-            else:
-                position_labels = position_labels + [0] * (self.max_len - len(position_labels))
+        # 为[CLS]和[SEP]准备标签
+        padded_position_labels = torch.zeros(len(input_ids), dtype=torch.long)
+        padded_position_labels[1:len(text)+1] = torch.tensor(position_labels)  # 跳过[CLS]
+        
+        if self.task == 'type':
+            type_labels = self.data[idx]['type_labels']
+            padded_type_labels = torch.zeros(len(input_ids), dtype=torch.long)
+            padded_type_labels[1:len(text)+1] = torch.tensor(type_labels)  # 跳过[CLS]
             
-            result['position_labels'] = torch.tensor(position_labels, dtype=torch.long)
+            # 目标位置也需要考虑[CLS]的偏移
+            target_positions = self.data[idx]['target_positions']
+            adjusted_positions = [pos + 1 for pos in target_positions]  # 位置+1以适应[CLS]
             
-        else: 
-            result['target_positions'] = torch.tensor(item['target_positions'], dtype=torch.long)
-            result['type_labels'] = torch.tensor(item['target_type'], dtype=torch.long)
-            
-        return result
+            return {
+                'text': text,
+                'input_ids': input_ids,
+                'attention_mask': attention_mask,
+                'type_labels': padded_type_labels,
+                'target_positions': torch.tensor(adjusted_positions)
+            }
+        
+        return {
+            'text': text,
+            'input_ids': input_ids,
+            'attention_mask': attention_mask,
+            'position_labels': padded_position_labels
+        }
 
     def __len__(self):
         return len(self.data)
+
+    def collate_fn(self, batch):
+        """自定义批处理函数，动态调整每个batch的长度"""
+        # 获取这个batch中的最大文本长度
+        max_text_len = max(len(item['text']) for item in batch)
+        max_seq_len = max_text_len + 2  # 加2是为了CLS和SEP
+        
+        # 准备batch数据
+        batch_texts = []
+        batch_input_ids = []
+        batch_attention_mask = []
+        batch_position_labels = []
+        
+        for item in batch:
+            text = item['text']
+            
+            # 重新进行tokenization，使用当前batch的最大长度
+            encoding = self.tokenizer(
+                text,
+                add_special_tokens=True,
+                padding='max_length',
+                max_length=max_seq_len,
+                truncation=True,
+                return_tensors='pt'
+            )
+            
+            batch_texts.append(text)
+            batch_input_ids.append(encoding['input_ids'].squeeze(0))
+            batch_attention_mask.append(encoding['attention_mask'].squeeze(0))
+            
+            # 处理标签
+            if self.task == 'position':
+                position_labels = item['position_labels']
+                padded_labels = torch.zeros(max_seq_len, dtype=torch.long)
+                padded_labels[1:len(text)+1] = position_labels[1:len(text)+1]  # 保持CLS的标签为0
+                batch_position_labels.append(padded_labels)
+        
+        # 将列表转换为张量
+        batch_dict = {
+            'text': batch_texts,
+            'input_ids': torch.stack(batch_input_ids),
+            'attention_mask': torch.stack(batch_attention_mask),
+        }
+        
+        if self.task == 'position':
+            batch_dict['position_labels'] = torch.stack(batch_position_labels)
+        else:  # task == 'type'
+            batch_type_labels = []
+            batch_target_positions = []
+            
+            for item in batch:
+                # 类型标签和目标位置已经在__getitem__中考虑了CLS的偏移
+                type_labels = item['type_labels']
+                padded_type_labels = torch.zeros(max_seq_len, dtype=torch.long)
+                padded_type_labels[1:len(text)+1] = type_labels[1:len(text)+1]
+                batch_type_labels.append(padded_type_labels)
+                batch_target_positions.append(item['target_positions'])
+            
+            batch_dict['type_labels'] = torch.stack(batch_type_labels)
+            batch_dict['target_positions'] = torch.stack(batch_target_positions)
+        
+        return batch_dict
