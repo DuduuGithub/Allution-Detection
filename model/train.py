@@ -8,12 +8,12 @@ import os
 from config import (
     BERT_MODEL_PATH, MAX_SEQ_LEN, BATCH_SIZE, 
     POSITION_EPOCHS, TYPE_EPOCHS, LEARNING_RATE,
-    SAVE_DIR, DATA_DIR
+    SAVE_DIR, DATA_DIR, ALLUSION_DICT_PATH
 )
 import argparse
 import pandas as pd
 
-def load_allusion_dict(dict_file='data/cleared_allusion_type.csv'):
+def load_allusion_dict(dict_file=ALLUSION_DICT_PATH):
     """加载典故词典并创建类型映射
     
     Returns:
@@ -77,18 +77,12 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
             
-            print(f"batch_idx: {batch_idx}")
-            print(f"batch: {batch}")
-            print(f"input_ids: {input_ids}")
-            
             # 生成字典特征
             texts = batch['text']  
             dict_features = prepare_sparse_features(texts, allusion_dict)
             dict_features = {
                 k: v.to(device) for k, v in dict_features.items()
             }
-            
-            print(f"dict_features: {dict_features}")
             
             optimizer.zero_grad()
             
@@ -121,6 +115,7 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
             total_loss += loss.item()
             
             if (batch_idx + 1) % 1 == 0:
+                
                 print(f'Epoch {epoch+1}, Batch {batch_idx+1}, Loss: {loss.item():.4f}')
         
         avg_train_loss = total_loss / len(train_dataloader)
@@ -215,6 +210,16 @@ def main():
     
     # 基础配置
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    # 添加设备信息打印
+    print(f"\n=== 训练设备信息 ===")
+    print(f"使用设备: {device}")
+    if torch.cuda.is_available():
+        print(f"GPU型号: {torch.cuda.get_device_name(0)}")
+        print(f"当前GPU显存使用: {torch.cuda.memory_allocated(0)/1024**2:.2f} MB")
+        print(f"当前GPU显存缓存: {torch.cuda.memory_reserved(0)/1024**2:.2f} MB")
+    print("="*30 + "\n")
+    
     os.makedirs(SAVE_DIR, exist_ok=True)
     
     # 根据任务选择训练轮数和数据路径

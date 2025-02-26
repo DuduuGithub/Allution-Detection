@@ -157,7 +157,7 @@ class PoetryNERDataset(Dataset):
         
         input_ids = encoding['input_ids'].squeeze(0)
         attention_mask = encoding['attention_mask'].squeeze(0)
-        
+        print('text:',text)
         # 为[CLS]和[SEP]准备标签
         padded_position_labels = torch.zeros(len(input_ids), dtype=torch.long)
         padded_position_labels[1:len(text)+1] = torch.tensor(position_labels)  # 跳过[CLS]
