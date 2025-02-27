@@ -2,16 +2,17 @@ import torch
 from torch.utils.data import DataLoader
 from transformers import BertTokenizer, get_linear_schedule_with_warmup
 from torch.optim import AdamW
-from poetry_dataset import PoetryNERDataset
-from bert_crf import AllusionBERTCRF, prepare_sparse_features
+from model.poetry_dataset import PoetryNERDataset  # 修改这行
+from model.bert_crf import AllusionBERTCRF, prepare_sparse_features
 import os
-from config import (
+from model.config import (  # 修改这行
     BERT_MODEL_PATH, MAX_SEQ_LEN, BATCH_SIZE, 
     POSITION_EPOCHS, TYPE_EPOCHS, LEARNING_RATE,
     SAVE_DIR, DATA_DIR, ALLUSION_DICT_PATH
 )
 import argparse
 import pandas as pd
+
 
 def load_allusion_dict(dict_file=ALLUSION_DICT_PATH):
     """加载典故词典并创建类型映射
@@ -64,25 +65,33 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
                 device, num_epochs, save_dir, task, allusion_dict):
     best_val_loss = float('inf')
     
+    # 计算打印频率
+    total_batches = len(train_dataloader)
+    print_freq = 50  # 每50个batch打印一次
+    
     # 日志文件
     train_log_file = os.path.join(save_dir, f'train_loss_{task}.txt')
     val_log_file = os.path.join(save_dir, f'val_loss_{task}.txt')
+    batch_log_file = os.path.join(save_dir, f'batch_loss_{task}.txt')  # 新增：记录每个batch的损失
+    
+    print(f"Total batches per epoch: {total_batches}")
+    print(f"Will print progress every {print_freq} batches")
     
     for epoch in range(num_epochs):
         # 训练阶段
         model.train()
         total_loss = 0
+        batch_losses = []  # 用于存储每个batch的损失
+        
         for batch_idx, batch in enumerate(train_dataloader):
             
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
             
             # 生成字典特征
-            texts = batch['text']  
+            texts = batch['text']
             dict_features = prepare_sparse_features(texts, allusion_dict)
-            dict_features = {
-                k: v.to(device) for k, v in dict_features.items()
-            }
+            dict_features = {k: v.to(device) for k, v in dict_features.items()}
             
             optimizer.zero_grad()
             
@@ -112,13 +121,29 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
             optimizer.step()
             scheduler.step()
             
-            total_loss += loss.item()
+            # 记录当前batch的损失
+            current_loss = loss.item()
+            batch_losses.append(current_loss)
+            total_loss += current_loss
             
-            if (batch_idx + 1) % 1 == 0:
-                
-                print(f'Epoch {epoch+1}, Batch {batch_idx+1}, Loss: {loss.item():.4f}')
+            # 将每个batch的损失写入文件
+            with open(batch_log_file, 'a', encoding='utf-8') as f:
+                f.write(f'Epoch {epoch+1}, Batch {batch_idx+1}: {current_loss:.4f}\n')
+            
+            # 每print_freq个batch打印一次平均损失
+            if (batch_idx + 1) % print_freq == 0:
+                # 计算最近print_freq个batch的平均损失
+                recent_avg_loss = sum(batch_losses[-print_freq:]) / print_freq
+                print(f'Epoch {epoch+1}, Batch {batch_idx+1}/{total_batches}, '
+                      f'Recent Average Loss: {recent_avg_loss:.4f}, '
+                      f'Current Batch Loss: {current_loss:.4f}')
         
-        avg_train_loss = total_loss / len(train_dataloader)
+        # 计算整个epoch的平均损失
+        epoch_avg_loss = total_loss / total_batches
+        
+        # 记录每个epoch的训练损失
+        with open(train_log_file, 'a', encoding='utf-8') as f:
+            f.write(f'Epoch {epoch+1}: {epoch_avg_loss:.4f}\n')
         
         # 验证阶段
         model.eval()
@@ -179,14 +204,11 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
         accuracy = total_correct / total_samples * 100
         
         # 保存训练和验证损失
-        with open(train_log_file, 'a', encoding='utf-8') as f:
-            f.write(f'Epoch {epoch+1}: {avg_train_loss:.4f}\n')
-        
         with open(val_log_file, 'a', encoding='utf-8') as f:
             f.write(f'Epoch {epoch+1}: {avg_val_loss:.4f}, Accuracy: {accuracy:.2f}%\n')
         
         print(f'Epoch {epoch+1}:')
-        print(f'Average training loss: {avg_train_loss:.4f}')
+        print(f'Average training loss: {epoch_avg_loss:.4f}')
         print(f'Average validation loss: {avg_val_loss:.4f}')
         print(f'Validation accuracy: {accuracy:.2f}%')
         

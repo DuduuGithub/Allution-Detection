@@ -4,19 +4,32 @@ import re
 from transformers import BertTokenizer
 import csv
 from torch.utils.data import DataLoader
-    
+import json
+
+def load_sentence_mappings(mapping_path):
+    """
+    加载句子映射
+    """
+    with open(mapping_path, 'r', encoding='utf-8') as f:
+        mappings = json.load(f)
+    return mappings['sentence_to_id'], mappings['id_to_sentence']
+
 class PoetryNERDataset(Dataset):
-    def __init__(self, file_path, tokenizer, max_len,type_label2id,id2type_label, task='position'):
+    def __init__(self, file_path, tokenizer, max_len, type_label2id, id2type_label, 
+                 task='position', features_path=None, mapping_path=None):
         """
         Args:
             file_path: 数据文件路径
             tokenizer: BERT tokenizer
             max_len: 最大序列长度
             task: 'position' 用于典故位置识别, 'type' 用于典故类型分类
+            features_path: 预处理特征文件路径
+            mapping_path: 句子映射文件路径
         """
-        self.file_path = file_path
         self.tokenizer = tokenizer
         self.max_len = max_len
+        self.type_label2id = type_label2id
+        self.id2type_label = id2type_label
         self.task = task
         
         # 典故位置标注标签映射
@@ -26,15 +39,50 @@ class PoetryNERDataset(Dataset):
             'I': 2
         }
         
-        # 从固定文件加载类型映射
-        self.type_label2id=type_label2id
-        self.id2type_label=id2type_label
-        
-        # 加载数据
+        # 加载句子映射和预处理的特征
+        if mapping_path and features_path:
+            self.sentence_to_id, _ = load_sentence_mappings(mapping_path)
+            self.precomputed_features = torch.load(features_path)
+        else:
+            self.sentence_to_id = None
+            self.precomputed_features = None
+            
+        # 使用原有的read_data方法加载和处理数据
         self.data = self.read_data(file_path)
-    
-    
-    
+        
+    def read_data(self, file_path):
+        """读取数据文件"""
+        dataset = []
+        with open(file_path, 'r', encoding='utf-8') as f:
+            next(f)  # 跳过标题行
+            for line in f:
+                if not line.strip() or '\t' not in line:
+                    continue
+                result = self.parse_line(line)
+                if result is None:
+                    continue
+                
+                text, position_labels, type_labels = result
+                
+                if self.task == 'position':
+                    dataset.append({
+                        'text': text,
+                        'position_labels': position_labels,
+                    })
+                else:  # task == 'type'
+                    # 为每个典故创建一个单独的样本
+                    allusion_positions = self.get_allusion_positions(position_labels, type_labels)
+                    for start, end, type_label in allusion_positions:
+                        dataset.append({
+                            'text': text,
+                            'position_labels': position_labels,
+                            'type_labels': type_labels,
+                            'target_positions': (start, end),
+                            'target_type': type_label
+                        })
+        
+        return dataset
+
     def parse_line(self, line):
         """解析单行数据，提取诗句和标签"""
         parts = line.strip().split('\t')
@@ -89,40 +137,6 @@ class PoetryNERDataset(Dataset):
             print(f"Error details: {str(e)}")
             return None
         
-    
-    def read_data(self, file_path):
-        """读取数据文件"""
-        dataset = []
-        with open(file_path, 'r', encoding='utf-8') as f:
-            next(f)  # 跳过标题行
-            for line in f:
-                if not line.strip() or '\t' not in line:
-                    continue
-                result = self.parse_line(line)
-                if result is None:
-                    continue
-                
-                text, position_labels, type_labels = result # 这些都是标号
-                
-                if self.task == 'position':
-                    dataset.append({
-                        'text': text,
-                        'position_labels': position_labels,
-                    })
-                else:  # task == 'type'
-                    # 为每个典故创建一个单独的样本
-                    allusion_positions = self.get_allusion_positions(position_labels, type_labels)
-                    for start, end, type_label in allusion_positions:
-                        dataset.append({
-                            'text': text,
-                            'position_labels': position_labels,
-                            'type_labels': type_labels,
-                            'target_positions': (start, end),
-                            'target_type': type_label
-                        })
-        
-        return dataset
-
     def get_allusion_positions(self, position_labels, type_labels):
         """提取所有典故的位置和类型"""
         allusion_positions = []
@@ -145,46 +159,56 @@ class PoetryNERDataset(Dataset):
 
     def __getitem__(self, idx):
         """获取单个样本"""
-        text = self.data[idx]['text']
-        position_labels = self.data[idx]['position_labels']
+        item = self.data[idx]
+        text = item['text']
+        
+        # 获取预处理的特征
+        if self.precomputed_features is not None:
+            sent_id = self.sentence_to_id[text]
+            dict_features = self.precomputed_features[sent_id]
+            # 转换回原始数据类型
+            dict_features = {
+                'indices': dict_features['indices'].to(torch.long),
+                'values': dict_features['values'].float(),
+                'active_counts': dict_features['active_counts'].to(torch.long)
+            }
+        else:
+            dict_features = None
         
         # BERT tokenization
         encoding = self.tokenizer(
             text,
-            add_special_tokens=True,  # 添加[CLS]和[SEP]
+            add_special_tokens=True,
+            max_length=self.max_len,
+            padding='max_length',
+            truncation=True,
             return_tensors='pt'
         )
         
-        input_ids = encoding['input_ids'].squeeze(0)
-        attention_mask = encoding['attention_mask'].squeeze(0)
-        print('text:',text)
-        # 为[CLS]和[SEP]准备标签
-        padded_position_labels = torch.zeros(len(input_ids), dtype=torch.long)
-        padded_position_labels[1:len(text)+1] = torch.tensor(position_labels)  # 跳过[CLS]
-        
-        if self.task == 'type':
-            type_labels = self.data[idx]['type_labels']
-            padded_type_labels = torch.zeros(len(input_ids), dtype=torch.long)
-            padded_type_labels[1:len(text)+1] = torch.tensor(type_labels)  # 跳过[CLS]
-            
-            # 目标位置也需要考虑[CLS]的偏移
-            target_positions = self.data[idx]['target_positions']
-            adjusted_positions = [pos + 1 for pos in target_positions]  # 位置+1以适应[CLS]
-            
-            return {
-                'text': text,
-                'input_ids': input_ids,
-                'attention_mask': attention_mask,
-                'type_labels': padded_type_labels,
-                'target_positions': torch.tensor(adjusted_positions)
-            }
-        
-        return {
+        result = {
             'text': text,
-            'input_ids': input_ids,
-            'attention_mask': attention_mask,
-            'position_labels': padded_position_labels
+            'input_ids': encoding['input_ids'].squeeze(0),
+            'attention_mask': encoding['attention_mask'].squeeze(0),
         }
+        
+        if dict_features:
+            result['dict_features'] = dict_features
+            
+        # 添加任务相关的标签
+        if self.task == 'position':
+            position_labels = item['position_labels']
+            padded_position_labels = torch.zeros(len(result['input_ids']), dtype=torch.long)
+            padded_position_labels[1:len(text)+1] = torch.tensor(position_labels)
+            result['position_labels'] = padded_position_labels
+        else:
+            type_labels = item['type_labels']
+            target_positions = item['target_positions']
+            padded_type_labels = torch.zeros(len(result['input_ids']), dtype=torch.long)
+            padded_type_labels[1:len(text)+1] = torch.tensor(type_labels)
+            result['type_labels'] = padded_type_labels
+            result['target_positions'] = torch.tensor([pos + 1 for pos in target_positions])
+            
+        return result
 
     def __len__(self):
         return len(self.data)

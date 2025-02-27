@@ -1,0 +1,7 @@
+Epoch 1, Batch 1: 218.8641
+Epoch 1, Batch 2: 230.0268
+Epoch 1, Batch 3: 242.6161
+Epoch 1, Batch 4: 225.6045
+Epoch 1, Batch 5: 226.1341
+Epoch 1, Batch 6: 225.3301
+Epoch 1, Batch 7: 213.3641

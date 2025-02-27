@@ -1,11 +1,14 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # 添加项目根目录到路径
+
 import torch
 import torch.nn as nn
 from transformers import BertModel, BertTokenizer
 from TorchCRF import CRF
 from scipy.sparse import csr_matrix
-from config import BERT_MODEL_PATH
+from model.config import BERT_MODEL_PATH, OPTIMAL_EPS, min_samples_size
 from difflib import SequenceMatcher
-from config import OPTIMAL_EPS,min_samples_size
 
 class AllusionBERTCRF(nn.Module):
     
