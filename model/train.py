@@ -62,17 +62,17 @@ def load_allusion_dict(dict_file=ALLUSION_DICT_PATH):
     return allusion_dict, type_label2id, id2type_label, num_types
 
 def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler, 
-                device, num_epochs, save_dir, task, allusion_dict):
+                device, num_epochs, save_dir, task):
     best_val_loss = float('inf')
     
     # 计算打印频率
     total_batches = len(train_dataloader)
-    print_freq = 50  # 每50个batch打印一次
+    print_freq = 50
     
     # 日志文件
     train_log_file = os.path.join(save_dir, f'train_loss_{task}.txt')
     val_log_file = os.path.join(save_dir, f'val_loss_{task}.txt')
-    batch_log_file = os.path.join(save_dir, f'batch_loss_{task}.txt')  # 新增：记录每个batch的损失
+    batch_log_file = os.path.join(save_dir, f'batch_loss_{task}.txt')
     
     print(f"Total batches per epoch: {total_batches}")
     print(f"Will print progress every {print_freq} batches")
@@ -81,24 +81,19 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
         # 训练阶段
         model.train()
         total_loss = 0
-        batch_losses = []  # 用于存储每个batch的损失
+        batch_losses = []
         
         for batch_idx, batch in enumerate(train_dataloader):
-            
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
-            
-            # 生成字典特征
-            texts = batch['text']
-            dict_features = prepare_sparse_features(texts, allusion_dict)
-            dict_features = {k: v.to(device) for k, v in dict_features.items()}
+            dict_features = {k: v.to(device) for k, v in batch['dict_features'].items()}
             
             optimizer.zero_grad()
             
             if task == 'position':
                 position_labels = batch['position_labels'].to(device)
                 loss = model(
-                    input_ids=input_ids, 
+                    input_ids=input_ids,
                     attention_mask=attention_mask,
                     dict_features=dict_features,
                     task='position',
@@ -155,24 +150,24 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
             for batch in val_dataloader:
                 input_ids = batch['input_ids'].to(device)
                 attention_mask = batch['attention_mask'].to(device)
-                
-                # 生成字典特征
-                texts = batch['text']
-                dict_features = prepare_sparse_features(texts, allusion_dict)
-                dict_features = {
-                    k: v.to(device) for k, v in dict_features.items()
-                }
+                dict_features = {k: v.to(device) for k, v in batch['dict_features'].items()}
                 
                 if task == 'position':
                     position_labels = batch['position_labels'].to(device)
-                    # 获取损失和预测结果
-                    loss, predictions = model(
+                    # 获取损失
+                    loss = model(
                         input_ids=input_ids,
                         attention_mask=attention_mask,
                         dict_features=dict_features,
                         task='position',
                         position_labels=position_labels,
-                        return_predictions=True
+                    )
+                    # 获取预测结果
+                    predictions = model(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                        dict_features=dict_features,
+                        task='position'
                     )
                     # 计算准确率（忽略填充标记）
                     mask = attention_mask.bool()
@@ -182,15 +177,22 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
                 else:  # task == 'type'
                     type_labels = batch['type_labels'].to(device)
                     target_positions = batch['target_positions'].to(device)
-                    # 获取损失和预测结果
-                    loss, predictions = model(
+                    # 获取损失
+                    loss = model(
                         input_ids=input_ids,
                         attention_mask=attention_mask,
                         dict_features=dict_features,
                         task='type',
                         target_positions=target_positions,
                         type_labels=type_labels,
-                        return_predictions=True
+                    )
+                    # 获取预测结果
+                    predictions = model(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                        dict_features=dict_features,
+                        task='type',
+                        target_positions=target_positions,
                     )
                     # 计算准确率
                     correct = (predictions == type_labels).sum().item()
@@ -223,6 +225,9 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
                 'accuracy': accuracy,
                 'task': task,
             }, os.path.join(save_dir, 'best_model.pt'))
+            print(f"Saved best model at epoch {epoch+1}")
+        else:
+            print(f"No improvement in validation loss. Current best loss: {best_val_loss:.4f}")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -244,11 +249,18 @@ def main():
     
     os.makedirs(SAVE_DIR, exist_ok=True)
     
+    # 预处理特征和映射文件路径
+    features_path = os.path.join(DATA_DIR, 'all_features.pt')
+    mapping_path = os.path.join(DATA_DIR, 'sentence_mappings.json')
+    
+    # 检查预处理文件是否存在
+    if not os.path.exists(features_path) or not os.path.exists(mapping_path):
+        raise FileNotFoundError("请先运行 process_dict_features.py 生成预处理特征！")
+    
     # 根据任务选择训练轮数和数据路径
     EPOCHS = POSITION_EPOCHS if args.stage == 'position' else TYPE_EPOCHS
     train_file = os.path.join(DATA_DIR, f'4_train_{args.stage}.csv')
     val_file = os.path.join(DATA_DIR, f'4_val_{args.stage}.csv')
-    test_file = os.path.join(DATA_DIR, f'4_test_{args.stage}.csv')
     
     # 加载典故词典和类型映射
     allusion_dict, type_label2id, id2type_label, num_types = load_allusion_dict()
@@ -269,13 +281,17 @@ def main():
             train_file, tokenizer, MAX_SEQ_LEN,
             type_label2id=type_label2id,
             id2type_label=id2type_label,
-            task='position'
+            task='position',
+            features_path=features_path,
+            mapping_path=mapping_path
         )
         val_dataset = PoetryNERDataset(
             val_file, tokenizer, MAX_SEQ_LEN,
             type_label2id=type_label2id,
             id2type_label=id2type_label,
-            task='position'
+            task='position',
+            features_path=features_path,
+            mapping_path=mapping_path
         )
         
     else:  # args.stage == 'type'
@@ -306,13 +322,17 @@ def main():
             train_file, tokenizer, MAX_SEQ_LEN,
             type_label2id=type_label2id,
             id2type_label=id2type_label,
-            task='type'
+            task='type',
+            features_path=features_path,
+            mapping_path=mapping_path
         )
         val_dataset = PoetryNERDataset(
             val_file, tokenizer, MAX_SEQ_LEN,
             type_label2id=type_label2id,
             id2type_label=id2type_label,
-            task='type'
+            task='type',
+            features_path=features_path,
+            mapping_path=mapping_path
         )
     
     # 创建数据加载器
@@ -342,7 +362,7 @@ def main():
     # 训练模型
     train_model(
         model, train_dataloader, val_dataloader, optimizer, scheduler,
-        device, EPOCHS, SAVE_DIR, args.stage, allusion_dict
+        device, EPOCHS, SAVE_DIR, args.stage
     )
 
 def test():
