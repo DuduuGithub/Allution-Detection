@@ -146,7 +146,7 @@ class AllusionBERTCRF(nn.Module):
         """
         # 1. BERT编码
         outputs = self.bert(input_ids, attention_mask=attention_mask)
-        sequence_output = outputs[0]  # [batch_size, seq_len, 768]
+        sequence_output = outputs[0]  # [batch_size, seq_len, 768] 一个batch的所有位置的向量
         
         # 2. 处理稀疏字典特征
         dict_output = self.process_dict_features(dict_features)  # [batch_size, seq_len, 256]

@@ -1043,3 +1043,17 @@ Epoch 1, Batch 954: 89.8342
 Epoch 1, Batch 955: 83.8151
 Epoch 1, Batch 956: 75.1023
 Epoch 1, Batch 957: 34.7362
+Epoch 1, Batch 1: 264.5500
+Epoch 1, Batch 2: 285.5413
+Epoch 1, Batch 3: 263.8042
+Epoch 1, Batch 4: 269.8746
+Epoch 1, Batch 5: 270.0629
+Epoch 1, Batch 6: 284.2636
+Epoch 1, Batch 7: 252.7938
+Epoch 1, Batch 8: 267.5378
+Epoch 1, Batch 1: 248.4291
+Epoch 1, Batch 2: 238.2987
+Epoch 1, Batch 3: 244.2421
+Epoch 1, Batch 4: 246.3165
+Epoch 1, Batch 5: 257.8199
+Epoch 1, Batch 6: 234.2245

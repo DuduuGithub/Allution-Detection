@@ -191,9 +191,12 @@ class PoetryNERDataset(Dataset):
             'attention_mask': encoding['attention_mask'].squeeze(0),
         }
         
+        # 添加字典特征,有个待解决的问题是，当该诗句不存在时，dict_features为None，且未处理
         if dict_features:
             result['dict_features'] = dict_features
-            
+        else:
+            result['dict_features'] = None
+        
         # 添加任务相关的标签
         if self.task == 'position':
             position_labels = item['position_labels']
@@ -214,16 +217,23 @@ class PoetryNERDataset(Dataset):
         return len(self.data)
 
     def collate_fn(self, batch):
-        """自定义批处理函数，动态调整每个batch的长度"""
+        """自定义批处理函数，处理不同长度的特征"""
         # 获取这个batch中的最大文本长度
         max_text_len = max(len(item['text']) for item in batch)
         max_seq_len = max_text_len + 2  # 加2是为了CLS和SEP
+        print(f"max_seq_len: {max_seq_len}")
+        
         
         # 准备batch数据
         batch_texts = []
         batch_input_ids = []
         batch_attention_mask = []
         batch_position_labels = []
+        
+        # 准备字典特征的列表
+        indices_list = []
+        values_list = []
+        active_counts_list = []
         
         for item in batch:
             text = item['text']
@@ -242,11 +252,46 @@ class PoetryNERDataset(Dataset):
             batch_input_ids.append(encoding['input_ids'].squeeze(0))
             batch_attention_mask.append(encoding['attention_mask'].squeeze(0))
             
-            # 处理标签
+            # 处理字典特征
+            if item['dict_features'] is not None:
+                indices = item['dict_features']['indices'][:max_seq_len]
+                values = item['dict_features']['values'][:max_seq_len]
+                active_counts = item['dict_features']['active_counts'][:max_seq_len]
+                
+                print(f"text: {text}")
+                print(f"indices: {indices}")
+                print(f"values: {values}")
+                print(f"active_counts: {active_counts}")
+            else:
+                # 如果没有特征，创建空特征
+                # 注意：第一个位置([CLS])设为0
+                indices = torch.zeros((max_seq_len, 5), dtype=torch.long)
+                values = torch.zeros((max_seq_len, 5), dtype=torch.float)
+                active_counts = torch.zeros(max_seq_len, dtype=torch.long)
+                
+                # 只为实际文本部分创建特征（跳过[CLS]）
+                text_len = len(text)
+                indices[1:text_len+1] = torch.zeros((text_len, 5), dtype=torch.long)
+                values[1:text_len+1] = torch.zeros((text_len, 5), dtype=torch.float)
+                active_counts[1:text_len+1] = torch.zeros(text_len, dtype=torch.long)
+
+                
+                
+            # 补全到最大长度（保持[CLS]位置为0）
+            if indices.size(0) < max_seq_len:
+                pad_len = max_seq_len - indices.size(0)
+                indices = torch.cat([indices, torch.zeros((pad_len, 5), dtype=torch.long)], dim=0)
+                values = torch.cat([values, torch.zeros((pad_len, 5), dtype=torch.float)], dim=0)
+                active_counts = torch.cat([active_counts, torch.zeros(pad_len, dtype=torch.long)], dim=0)
+            
+            indices_list.append(indices)
+            values_list.append(values)
+            active_counts_list.append(active_counts)
+            
             if self.task == 'position':
                 position_labels = item['position_labels']
                 padded_labels = torch.zeros(max_seq_len, dtype=torch.long)
-                padded_labels[1:len(text)+1] = position_labels[1:len(text)+1]  # 保持CLS的标签为0
+                padded_labels[1:len(text)+1] = position_labels[1:len(text)+1]  # 跳过[CLS]
                 batch_position_labels.append(padded_labels)
         
         # 将列表转换为张量
@@ -254,23 +299,14 @@ class PoetryNERDataset(Dataset):
             'text': batch_texts,
             'input_ids': torch.stack(batch_input_ids),
             'attention_mask': torch.stack(batch_attention_mask),
+            'dict_features': {
+                'indices': torch.stack(indices_list),
+                'values': torch.stack(values_list),
+                'active_counts': torch.stack(active_counts_list)
+            }
         }
         
         if self.task == 'position':
             batch_dict['position_labels'] = torch.stack(batch_position_labels)
-        else:  # task == 'type'
-            batch_type_labels = []
-            batch_target_positions = []
-            
-            for item in batch:
-                # 类型标签和目标位置已经在__getitem__中考虑了CLS的偏移
-                type_labels = item['type_labels']
-                padded_type_labels = torch.zeros(max_seq_len, dtype=torch.long)
-                padded_type_labels[1:len(text)+1] = type_labels[1:len(text)+1]
-                batch_type_labels.append(padded_type_labels)
-                batch_target_positions.append(item['target_positions'])
-            
-            batch_dict['type_labels'] = torch.stack(batch_type_labels)
-            batch_dict['target_positions'] = torch.stack(batch_target_positions)
         
         return batch_dict

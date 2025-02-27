@@ -1,15 +1,18 @@
-import torch
-from torch.utils.data import DataLoader
-from transformers import BertTokenizer, get_linear_schedule_with_warmup
-from torch.optim import AdamW
-from model.poetry_dataset import PoetryNERDataset  # 修改这行
-from model.bert_crf import AllusionBERTCRF, prepare_sparse_features
+import sys
 import os
-from model.config import (  # 修改这行
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from model.poetry_dataset import PoetryNERDataset
+from model.bert_crf import AllusionBERTCRF, prepare_sparse_features
+from model.config import (
     BERT_MODEL_PATH, MAX_SEQ_LEN, BATCH_SIZE, 
     POSITION_EPOCHS, TYPE_EPOCHS, LEARNING_RATE,
     SAVE_DIR, DATA_DIR, ALLUSION_DICT_PATH
 )
+import torch
+from torch.utils.data import DataLoader
+from transformers import BertTokenizer, get_linear_schedule_with_warmup
+from torch.optim import AdamW
 import argparse
 import pandas as pd
 
@@ -86,7 +89,13 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
         for batch_idx, batch in enumerate(train_dataloader):
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
-            dict_features = {k: v.to(device) for k, v in batch['dict_features'].items()}
+            
+            # 将字典中的每个张量移到device
+            dict_features = {
+                'indices': batch['dict_features']['indices'].to(device),
+                'values': batch['dict_features']['values'].to(device),
+                'active_counts': batch['dict_features']['active_counts'].to(device)
+            }
             
             optimizer.zero_grad()
             
@@ -150,7 +159,13 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
             for batch in val_dataloader:
                 input_ids = batch['input_ids'].to(device)
                 attention_mask = batch['attention_mask'].to(device)
-                dict_features = {k: v.to(device) for k, v in batch['dict_features'].items()}
+                
+                # 将字典中的每个张量移到device
+                dict_features = {
+                    'indices': batch['dict_features']['indices'].to(device),
+                    'values': batch['dict_features']['values'].to(device),
+                    'active_counts': batch['dict_features']['active_counts'].to(device)
+                }
                 
                 if task == 'position':
                     position_labels = batch['position_labels'].to(device)

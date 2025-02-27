@@ -48,43 +48,37 @@ def create_and_save_sentence_mappings(source_path, output_path):
     return sentence_to_id
 
 def preprocess_all_features(sentence_to_id, features_output_path):
-    """
-    预处理所有句子的特征并保存
-    Args:
-        sentence_to_id: 句子到ID的映射
-        features_output_path: 特征保存路径
-    """
+    """预处理所有句子的特征并保存"""
     # 加载典故字典
     allusion_dict, _, _, _ = load_allusion_dict()
     
     # 存储所有特征
     all_features = {}
     
-    # 批量处理以提高效率
-    batch_size = 32
+    # 逐个处理句子
     sentences = list(sentence_to_id.keys())
     
-    for i in tqdm(range(0, len(sentences), batch_size), desc="Preprocessing features"):
-        batch_sentences = sentences[i:i + batch_size]
-        # 批量生成特征
-        features = prepare_sparse_features(batch_sentences, allusion_dict)
+    for sent in tqdm(sentences, desc="Preprocessing features"):
+        # 生成特征
+        features = prepare_sparse_features([sent], allusion_dict)
         
-        # 将特征分配给各个句子
-        for j, sent in enumerate(batch_sentences):
-            sent_id = sentence_to_id[sent]
-            # 提取单个句子的特征并转换为较小的数据类型以节省空间
-            all_features[sent_id] = {
-                'indices': features['indices'][j].to(torch.int16),
-                'values': features['values'][j].half(),  # 使用半精度
-                'active_counts': features['active_counts'][j].to(torch.int16)
-            }
+        # 获取句子ID
+        sent_id = sentence_to_id[sent]
+        
+        # 提取单个句子的特征
+        all_features[sent_id] = {
+            'indices': features['indices'][0].to(torch.int16),
+            'values': features['values'][0].half(),
+            'active_counts': features['active_counts'][0].to(torch.int16)
+        }
+        
     
     # 保存特征
     torch.save(all_features, features_output_path)
     
     # 计算内存使用
     total_size = os.path.getsize(features_output_path) / (1024 * 1024)  # MB
-    print(f"Features saved to {features_output_path}")
+    print(f"\nFeatures saved to {features_output_path}")
     print(f"Total file size: {total_size:.2f} MB")
 
 def load_sentence_mappings(mapping_path):
@@ -106,8 +100,8 @@ if __name__ == "__main__":
     source_path = os.path.join(DATA_DIR, '3_1_2_final_position_dataset.csv')
     
     # 映射文件和特征文件的保存路径
-    mapping_path = os.path.join(DATA_DIR, 'sentence_mappings.json')
-    features_path = os.path.join(DATA_DIR, 'all_features.pt')
+    mapping_path = os.path.join(DATA_DIR, 'allusion_mapping.json')
+    features_path = os.path.join(DATA_DIR, 'allusion_features.pt')
     
     # 创建并保存句子映射
     sentence_to_id = create_and_save_sentence_mappings(
