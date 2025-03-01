@@ -95,6 +95,43 @@ def evaluate_model(model, dataloader, device, task='position'):
         average='weighted'
     )
     
+    # 分别计算O标签、B标签和I标签的准确率
+    o_mask = (torch.tensor(all_labels) == 0) & (torch.tensor(all_labels) != -1)
+    b_mask = (torch.tensor(all_labels) == 1) & (torch.tensor(all_labels) != -1)
+    i_mask = (torch.tensor(all_labels) == 2) & (torch.tensor(all_labels) != -1)
+
+    predictions_tensor = torch.tensor(all_predictions, device=torch.tensor(all_labels).device)
+
+    # O标签指标
+    o_correct = ((predictions_tensor == torch.tensor(all_labels)) & o_mask).sum().item()
+    o_total = o_mask.sum().item()
+    o_pred_total = (predictions_tensor == 0).sum().item()  # 预测为O的总数
+
+    # B标签指标
+    b_correct = ((predictions_tensor == torch.tensor(all_labels)) & b_mask).sum().item()
+    b_total = b_mask.sum().item()
+    b_pred_total = (predictions_tensor == 1).sum().item()  # 预测为B的总数
+
+    # I标签指标
+    i_correct = ((predictions_tensor == torch.tensor(all_labels)) & i_mask).sum().item()
+    i_total = i_mask.sum().item()
+    i_pred_total = (predictions_tensor == 2).sum().item()  # 预测为I的总数
+
+    # 计算精确率和召回率
+    o_precision = o_correct / o_pred_total if o_pred_total > 0 else 0
+    o_recall = o_correct / o_total if o_total > 0 else 0
+    b_precision = b_correct / b_pred_total if b_pred_total > 0 else 0
+    b_recall = b_correct / b_total if b_total > 0 else 0
+    i_precision = i_correct / i_pred_total if i_pred_total > 0 else 0
+    i_recall = i_correct / i_total if i_total > 0 else 0
+
+    # 打印详细信息
+    print('\nDetailed Metrics:')
+    print(f'O-tag - Precision: {o_precision*100:.2f}%, Recall: {o_recall*100:.2f}%, Accuracy: {o_correct/o_total*100:.2f}% ({o_correct}/{o_total})')
+    print(f'B-tag - Precision: {b_precision*100:.2f}%, Recall: {b_recall*100:.2f}%, Accuracy: {b_correct/b_total*100:.2f}% ({b_correct}/{b_total})')
+    print(f'I-tag - Precision: {i_precision*100:.2f}%, Recall: {i_recall*100:.2f}%, Accuracy: {i_correct/i_total*100:.2f}% ({i_correct}/{i_total})')
+    print(f'Overall Accuracy: {(o_correct + b_correct + i_correct)/(o_total + b_total + i_total)*100:.2f}%')
+    
     return {
         'precision': precision,
         'recall': recall,

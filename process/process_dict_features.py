@@ -100,8 +100,8 @@ if __name__ == "__main__":
     source_path = os.path.join(DATA_DIR, '3_1_2_final_position_dataset.csv')
     
     # 映射文件和特征文件的保存路径
-    mapping_path = os.path.join(DATA_DIR, 'allusion_mapping.json')
-    features_path = os.path.join(DATA_DIR, 'allusion_features.pt')
+    mapping_path = os.path.join(DATA_DIR, 'allusion_mapping_large_dict.json')
+    features_path = os.path.join(DATA_DIR, 'allusion_features_large_dict.pt')
     
     # 创建并保存句子映射
     sentence_to_id = create_and_save_sentence_mappings(

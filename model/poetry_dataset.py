@@ -221,7 +221,7 @@ class PoetryNERDataset(Dataset):
         # 获取这个batch中的最大文本长度
         max_text_len = max(len(item['text']) for item in batch)
         max_seq_len = max_text_len + 2  # 加2是为了CLS和SEP
-        print(f"max_seq_len: {max_seq_len}")
+
         
         
         # 准备batch数据
@@ -258,10 +258,6 @@ class PoetryNERDataset(Dataset):
                 values = item['dict_features']['values'][:max_seq_len]
                 active_counts = item['dict_features']['active_counts'][:max_seq_len]
                 
-                print(f"text: {text}")
-                print(f"indices: {indices}")
-                print(f"values: {values}")
-                print(f"active_counts: {active_counts}")
             else:
                 # 如果没有特征，创建空特征
                 # 注意：第一个位置([CLS])设为0

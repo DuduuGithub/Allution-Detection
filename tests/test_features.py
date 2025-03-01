@@ -9,8 +9,8 @@ from model.train import load_allusion_dict
 
 def test_features():
     # 加载映射和特征文件
-    mapping_path = os.path.join(DATA_DIR, 'tttt.json')
-    features_path = os.path.join(DATA_DIR, 'tttt.pt')
+    mapping_path = os.path.join(DATA_DIR, 'allusion_mapping.json')
+    features_path = os.path.join(DATA_DIR, 'allusion_features.pt')
     
     sentence_to_id, id_to_sentence = load_sentence_mappings(mapping_path)
     all_features = load_features(features_path)

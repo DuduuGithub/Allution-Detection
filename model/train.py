@@ -38,7 +38,7 @@ def load_allusion_dict(dict_file=ALLUSION_DICT_PATH):
         allusion = row['allusion']
     
         # 处理变体列表
-        variants = eval(row['representatives'])  # 安全地解析字符串列表
+        variants = eval(row['variation_list'])  # 安全地解析字符串列表
         
         # 添加到典故词典
         allusion_dict[allusion] = variants
@@ -101,6 +101,7 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
             
             if task == 'position':
                 position_labels = batch['position_labels'].to(device)
+
                 loss = model(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
@@ -130,10 +131,6 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
             batch_losses.append(current_loss)
             total_loss += current_loss
             
-            # 将每个batch的损失写入文件
-            with open(batch_log_file, 'a', encoding='utf-8') as f:
-                f.write(f'Epoch {epoch+1}, Batch {batch_idx+1}: {current_loss:.4f}\n')
-            
             # 每print_freq个batch打印一次平均损失
             if (batch_idx + 1) % print_freq == 0:
                 # 计算最近print_freq个batch的平均损失
@@ -152,8 +149,12 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
         # 验证阶段
         model.eval()
         val_loss = 0
-        total_correct = 0
-        total_samples = 0
+        val_steps = 0
+        
+        # 添加混淆矩阵统计
+        b_tp, b_fp, b_fn = 0, 0, 0  # B标签的true positive, false positive, false negative
+        i_tp, i_fp, i_fn = 0, 0, 0  # I标签
+        o_tp, o_fp, o_fn = 0, 0, 0  # O标签
         
         with torch.no_grad():
             for batch in val_dataloader:
@@ -184,10 +185,35 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
                         dict_features=dict_features,
                         task='position'
                     )
-                    # 计算准确率（忽略填充标记）
-                    mask = attention_mask.bool()
-                    correct = ((predictions == position_labels) & mask).sum().item()
-                    total = mask.sum().item()
+                    
+                    # 计算指标（忽略[CLS], [SEP]和填充标记）
+                    mask = attention_mask[:, 1:-1].bool()
+                    masked_labels = torch.where(mask, position_labels[:, 1:-1], 
+                                             torch.zeros_like(position_labels[:, 1:-1]))
+                    
+                    # 统计各类指标
+                    for pred, label in zip(predictions, masked_labels):
+                        for p, l in zip(pred, label):
+                            # B标签统计
+                            if l == 1:  # 真实标签是B
+                                if p == 1: b_tp += 1
+                                else: b_fn += 1
+                            if p == 1:  # 预测标签是B
+                                if l != 1: b_fp += 1
+                            
+                            # I标签统计
+                            if l == 2:  # 真实标签是I
+                                if p == 2: i_tp += 1
+                                else: i_fn += 1
+                            if p == 2:  # 预测标签是I
+                                if l != 2: i_fp += 1
+                            
+                            # O标签统计
+                            if l == 0:  # 真实标签是O
+                                if p == 0: o_tp += 1
+                                else: o_fn += 1
+                            if p == 0:  # 预测标签是O
+                                if l != 0: o_fp += 1
                     
                 else:  # task == 'type'
                     type_labels = batch['type_labels'].to(device)
@@ -212,32 +238,68 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
                     # 计算准确率
                     correct = (predictions == type_labels).sum().item()
                     total = len(type_labels)
-                
+                    
                 val_loss += loss.item()
-                total_correct += correct
-                total_samples += total
+                val_steps += 1
         
-        avg_val_loss = val_loss / len(val_dataloader)
-        accuracy = total_correct / total_samples * 100
+        # 计算整个验证集的统计信息
+        val_loss = val_loss / val_steps
         
+        # 计算并打印详细指标
+        print("\nValidation Results:")
+        print(f"Validation Loss: {val_loss:.4f}")
+        
+        # 计算并打印每个标签的详细指标
+        def calculate_metrics(tp, fp, fn):
+            precision = tp / (tp + fp) if tp + fp > 0 else 0
+            recall = tp / (tp + fn) if tp + fn > 0 else 0
+            f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
+            return precision, recall, f1
+        
+        print("\nDetailed Metrics:")
+        # B标签指标
+        b_precision, b_recall, b_f1 = calculate_metrics(b_tp, b_fp, b_fn)
+        print(f"B Label - Precision: {b_precision:.4f}, Recall: {b_recall:.4f}, F1: {b_f1:.4f}")
+        print(f"         TP: {b_tp}, FP: {b_fp}, FN: {b_fn}")
+        
+        # I标签指标
+        i_precision, i_recall, i_f1 = calculate_metrics(i_tp, i_fp, i_fn)
+        print(f"I Label - Precision: {i_precision:.4f}, Recall: {i_recall:.4f}, F1: {i_f1:.4f}")
+        print(f"         TP: {i_tp}, FP: {i_fp}, FN: {i_fn}")
+        
+        # O标签指标
+        o_precision, o_recall, o_f1 = calculate_metrics(o_tp, o_fp, o_fn)
+        print(f"O Label - Precision: {o_precision:.4f}, Recall: {o_recall:.4f}, F1: {o_f1:.4f}")
+        print(f"         TP: {o_tp}, FP: {o_fp}, FN: {o_fn}")
+        
+        # 计算宏平均
+        macro_precision = (b_precision + i_precision + o_precision) / 3
+        macro_recall = (b_recall + i_recall + o_recall) / 3
+        macro_f1 = (b_f1 + i_f1 + o_f1) / 3
+        print(f"\nMacro Average - Precision: {macro_precision:.4f}, Recall: {macro_recall:.4f}, F1: {macro_f1:.4f}")
+        
+            
         # 保存训练和验证损失
         with open(val_log_file, 'a', encoding='utf-8') as f:
-            f.write(f'Epoch {epoch+1}: {avg_val_loss:.4f}, Accuracy: {accuracy:.2f}%\n')
+            f.write(f'Epoch {epoch+1}: {val_loss:.4f}\n')
+            f.write(f"Validation Loss: {val_loss:.4f}\n")
+            f.write(f"B Label - Precision: {b_precision:.4f}, Recall: {b_recall:.4f}, F1: {b_f1:.4f}\n")
+            f.write(f"         TP: {b_tp}, FP: {b_fp}, FN: {b_fn}\n")
+            f.write(f"I Label - Precision: {i_precision:.4f}, Recall: {i_recall:.4f}, F1: {i_f1:.4f}\n")
+            f.write(f"         TP: {i_tp}, FP: {i_fp}, FN: {i_fn}\n")
+            f.write(f"O Label - Precision: {o_precision:.4f}, Recall: {o_recall:.4f}, F1: {o_f1:.4f}\n")
+            f.write(f"         TP: {o_tp}, FP: {o_fp}, FN: {o_fn}\n")
+            f.write(f"\nMacro Average - Precision: {macro_precision:.4f}, Recall: {macro_recall:.4f}, F1: {macro_f1:.4f}\n")
         
-        print(f'Epoch {epoch+1}:')
-        print(f'Average training loss: {epoch_avg_loss:.4f}')
-        print(f'Average validation loss: {avg_val_loss:.4f}')
-        print(f'Validation accuracy: {accuracy:.2f}%')
         
         # 使用统一的模型保存文件名
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': best_val_loss,
-                'accuracy': accuracy,
                 'task': task,
             }, os.path.join(save_dir, 'best_model.pt'))
             print(f"Saved best model at epoch {epoch+1}")
@@ -265,8 +327,8 @@ def main():
     os.makedirs(SAVE_DIR, exist_ok=True)
     
     # 预处理特征和映射文件路径
-    features_path = os.path.join(DATA_DIR, 'all_features.pt')
-    mapping_path = os.path.join(DATA_DIR, 'sentence_mappings.json')
+    features_path = os.path.join(DATA_DIR, 'allusion_features.pt')
+    mapping_path = os.path.join(DATA_DIR, 'allusion_mapping.json')
     
     # 检查预处理文件是否存在
     if not os.path.exists(features_path) or not os.path.exists(mapping_path):

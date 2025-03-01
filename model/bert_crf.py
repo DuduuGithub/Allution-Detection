@@ -43,6 +43,44 @@ class AllusionBERTCRF(nn.Module):
         self.position_classifier = nn.Linear(self.lstm_hidden_size * 2, 3)
         self.position_crf = CRF(3, batch_first=True)
         
+        # 添加CRF转移约束
+        transitions = torch.zeros(3, 3)
+        
+        # 设置不合法转移为极小值
+        # O -> I 不允许
+        transitions[0, 2] = -10000.0
+        # I -> B 不建议（可以有但不推荐）
+        transitions[2, 1] = -50.0
+        # B -> O 不建议（可以有但不推荐）
+        transitions[1, 0] = -50.0
+        
+        # 设置合法转移为正值以鼓励
+        # B -> I 鼓励
+        transitions[1, 2] = 15.0
+        # O -> B 鼓励
+        transitions[0, 1] = 10.0
+        # I -> I 鼓励
+        transitions[2, 2] = 10.0
+        
+        # 开始标签到各个标签的转移
+        # START -> O 允许
+        self.position_crf.start_transitions.data[0] = 0
+        # START -> B 允许
+        self.position_crf.start_transitions.data[1] = 0
+        # START -> I 不允许
+        self.position_crf.start_transitions.data[2] = -10000.0
+        
+        # 各个标签到结束标签的转移
+        # O -> END 允许
+        self.position_crf.end_transitions.data[0] = 0
+        # B -> END 不建议
+        self.position_crf.end_transitions.data[1] = -100.0
+        # I -> END 允许
+        self.position_crf.end_transitions.data[2] = 0
+        
+        # 设置转移矩阵
+        self.position_crf.transitions.data = transitions
+        
         # 注意力层
         self.attention = nn.Sequential(
             nn.Linear(self.lstm_hidden_size * 2, 256),
@@ -131,13 +169,50 @@ class AllusionBERTCRF(nn.Module):
         
         return weighted_sum
 
+    def weighted_crf_loss(self, emissions, labels, mask, pos_weight=4.0):
+        """
+        计算带权重的CRF损失
+        Args:
+            emissions: [batch_size, seq_len, num_tags]
+            labels: [batch_size, seq_len]
+            mask: [batch_size, seq_len]
+            pos_weight: 正样本权重
+        """
+        batch_size, seq_len = labels.shape
+        
+        # 创建权重矩阵
+        weights = torch.ones_like(labels, dtype=torch.float)
+        # 将典故位置(B/I)的权重设置为pos_weight
+        weights = torch.where(labels > 0, torch.tensor(pos_weight, device=labels.device), weights)
+        
+        # 计算基础CRF损失
+        base_loss = -self.position_crf(
+            emissions,
+            labels,
+            mask=mask,
+            reduction='none'
+        )
+        
+        # 打印调试信息（确保只看mask内的有效标签）
+        # masked_labels = labels[mask]
+        # masked_weights = weights[mask]
+        # print("Labels distribution in loss:", torch.bincount(masked_labels))
+        # print("Original weights values:", torch.unique(masked_weights))
+        # print("Number of O labels:", (masked_labels == 0).sum().item())
+        # print("Number of B labels:", (masked_labels == 1).sum().item())
+        # print("Number of I labels:", (masked_labels == 2).sum().item())
+        # print("Number of weighted positions:", (masked_weights == pos_weight).sum().item())
+        
+        weighted_loss = base_loss * weights.mean(dim=1)
+        return weighted_loss.mean()
+
     def forward(self, input_ids, attention_mask, dict_features, task='position', 
                 position_labels=None, type_labels=None, target_positions=None):
         """
         前向传播
         Args:
             input_ids: 输入的token ids
-            attention_mask: 注意力掩码
+            attention_mask: 注意力掩码 已考虑[CLS]和[SEP]
             dict_features: 稀疏特征字典
             task: 'position' 或 'type'，指定当前任务
             position_labels: 位置标签 (B/I/O)    已考虑[CLS]和[SEP]
@@ -146,7 +221,7 @@ class AllusionBERTCRF(nn.Module):
         """
         # 1. BERT编码
         outputs = self.bert(input_ids, attention_mask=attention_mask)
-        sequence_output = outputs[0]  # [batch_size, seq_len, 768] 一个batch的所有位置的向量
+        sequence_output = outputs[0]  # [batch_size, seq_len, 768]
         
         # 2. 处理稀疏字典特征
         dict_output = self.process_dict_features(dict_features)  # [batch_size, seq_len, 256]
@@ -160,23 +235,63 @@ class AllusionBERTCRF(nn.Module):
         if task == 'position':
             # 位置识别 (B/I/O)
             position_emissions = self.position_classifier(lstm_output)
-            mask = attention_mask.bool()
             
             if position_labels is not None:
-                # 忽略CLS和SEP的损失计算
-                loss = -self.position_crf(
-                    position_emissions[:, 1:-1, :],  # 去掉CLS和SEP
-                    position_labels[:, 1:-1],        # 去掉CLS和SEP
-                    mask=mask[:, 1:-1]               # 去掉CLS和SEP
+                # 训练模式
+                batch_size, seq_len = position_labels.shape  # 使用position_labels的形状
+                mask = torch.ones((batch_size, seq_len), dtype=torch.bool, device=position_emissions.device)
+                
+                # 根据attention_mask设置实际长度
+                for i in range(batch_size):
+                    valid_len = attention_mask[i].sum().item()
+                    mask[i, valid_len:] = False
+                
+                
+                # 使用带权重的损失
+                loss = self.weighted_crf_loss(
+                    position_emissions,
+                    position_labels,
+                    mask=mask,
+                    pos_weight=150
                 )
-                return loss.mean()
+                return loss
+            
             else:
-                # 预测时也忽略CLS和SEP
-                prediction = self.position_crf.viterbi_decode(
-                    position_emissions[:, 1:-1, :],
-                    mask=mask[:, 1:-1]
+                # 预测模式 - 添加dummy样本
+                batch_size, seq_len = position_emissions.shape[:2]
+                dummy_emission = position_emissions[0:1].clone()
+                position_emissions = torch.cat([dummy_emission, position_emissions], dim=0)
+                
+                # 创建包含dummy样本的mask
+                mask = torch.ones((batch_size + 1, seq_len), dtype=torch.bool, device=position_emissions.device)
+                mask[0] = True  # dummy样本的mask全为True
+                
+                # print('attention_mask:', attention_mask)
+                
+                # 为实际样本设置mask
+                for i in range(batch_size):
+                    valid_len = attention_mask[i].sum().item()
+                    # print('valid_len:', valid_len)
+                    mask[i+1, valid_len:] = False
+                
+                # print('mask:', mask)
+
+                # 预测
+                prediction = self.position_crf.decode(
+                    position_emissions,
+                    mask=mask
                 )
-                return prediction
+                
+                # 去掉dummy样本并确保所有序列长度一致
+                predictions = []
+                for pred in prediction[1:]:  # 跳过dummy样本
+                    # 如果预测长度小于seq_len，补充到完整长度
+                    if len(pred) < seq_len:
+                        pred = pred + [0] * (seq_len - len(pred))
+                    predictions.append(pred[1:-1])  # 去掉[CLS]和[SEP]
+                
+                # print('Prediction in forward:', predictions)
+                return predictions
         
         elif task == 'type':
             # 获取目标位置的特征

@@ -27,12 +27,23 @@ def load_representative_dict(file_path='data/cleared_allusion_type.csv'):
         rep_dict[allusion] = representatives
     return rep_dict
 
+def load_representative_dict_large(file_path='data/updated_典故的异性数据.csv'):
+    """加载代表词字典"""
+    df = pd.read_csv(file_path, encoding='utf-8', sep='\t')
+    rep_dict = {}
+    for _, row in df.iterrows():
+        allusion = row['allusion']
+        # 将字符串形式的列表转换为实际的列表
+        representatives = eval(row['variation_list'])
+        rep_dict[allusion] = representatives
+    return rep_dict
+
 def test_variant_recognition(sample_size=None):
     """测试变体识别效果"""
     # 加载数据
     print("加载数据...")
     original_df = load_allusion_data()
-    rep_dict = load_representative_dict()
+    rep_dict = load_representative_dict_large()
     
     print(f"\n使用的eps阈值: {OPTIMAL_EPS}")
     
@@ -137,4 +148,4 @@ def test_variant_recognition(sample_size=None):
 
 if __name__ == "__main__":
     # 测试所有典故的变体识别效果
-    test_variant_recognition(50)
+    test_variant_recognition(100)

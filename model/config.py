@@ -23,7 +23,7 @@ OPTIMAL_EPS = 0.3824829931972789
 DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
 SAVE_DIR = os.path.join(PROJECT_ROOT, 'output')
 ALLUSION_TYPES_PATH = os.path.join(DATA_DIR, 'updated_典故的异性数据.csv')
-ALLUSION_DICT_PATH = os.path.join(DATA_DIR, 'cleared_allusion_type.csv')
+ALLUSION_DICT_PATH = os.path.join(DATA_DIR, 'updated_典故的异性数据.csv')
 
 # 标签配置
 POSITION_LABELS = {
