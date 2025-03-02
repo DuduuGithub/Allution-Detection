@@ -327,8 +327,8 @@ def main():
     os.makedirs(SAVE_DIR, exist_ok=True)
     
     # 预处理特征和映射文件路径
-    features_path = os.path.join(DATA_DIR, 'allusion_features.pt')
-    mapping_path = os.path.join(DATA_DIR, 'allusion_mapping.json')
+    features_path = os.path.join(DATA_DIR, 'allusion_features_large_dict.pt')
+    mapping_path = os.path.join(DATA_DIR, 'allusion_mapping_large_dict.json')
     
     # 检查预处理文件是否存在
     if not os.path.exists(features_path) or not os.path.exists(mapping_path):
