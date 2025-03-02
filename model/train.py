@@ -67,6 +67,7 @@ def load_allusion_dict(dict_file=ALLUSION_DICT_PATH):
 def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler, 
                 device, num_epochs, save_dir, task):
     best_val_loss = float('inf')
+    best_f1 = 0  # 添加F1指标跟踪
     
     # 计算打印频率
     total_batches = len(train_dataloader)
@@ -275,7 +276,7 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
         # 计算宏平均
         macro_precision = (b_precision + i_precision + o_precision) / 3
         macro_recall = (b_recall + i_recall + o_recall) / 3
-        macro_f1 = (b_f1 + i_f1 + o_f1) / 3
+        macro_f1 = b_f1*0.4 + i_f1*0.4 + o_f1*0.2
         print(f"\nMacro Average - Precision: {macro_precision:.4f}, Recall: {macro_recall:.4f}, F1: {macro_f1:.4f}")
         
             
@@ -292,7 +293,21 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
             f.write(f"\nMacro Average - Precision: {macro_precision:.4f}, Recall: {macro_recall:.4f}, F1: {macro_f1:.4f}\n")
         
         
-        # 使用统一的模型保存文件名
+        # 在验证阶段结束后，计算当前epoch的macro_f1
+        if macro_f1 > best_f1:
+            best_f1 = macro_f1
+            # 保存模型
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
+                'val_loss': val_loss,
+                'macro_f1': macro_f1,  # 添加F1指标到保存信息中
+            }, os.path.join(save_dir, 'best_model.pt'))
+            print(f"Model saved with new best F1: {macro_f1:.4f}")
+        
+        # 原有的基于损失的保存逻辑可以保留，但改为保存一个单独的文件
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save({
@@ -336,8 +351,8 @@ def main():
     
     # 根据任务选择训练轮数和数据路径
     EPOCHS = POSITION_EPOCHS if args.stage == 'position' else TYPE_EPOCHS
-    train_file = os.path.join(DATA_DIR, f'4_train_{args.stage}.csv')
-    val_file = os.path.join(DATA_DIR, f'4_val_{args.stage}.csv')
+    train_file = os.path.join(DATA_DIR, f'4_train_{args.stage}_no_bug.csv')
+    val_file = os.path.join(DATA_DIR, f'4_val_{args.stage}_no_bug.csv')
     
     # 加载典故词典和类型映射
     allusion_dict, type_label2id, id2type_label, num_types = load_allusion_dict()

@@ -56,11 +56,11 @@ class AllusionBERTCRF(nn.Module):
         
         # 设置合法转移为正值以鼓励
         # B -> I 鼓励
-        transitions[1, 2] = 15.0
+        transitions[1, 2] = 20.0
         # O -> B 鼓励
-        transitions[0, 1] = 10.0
+        transitions[0, 1] = 8.0
         # I -> I 鼓励
-        transitions[2, 2] = 10.0
+        transitions[2, 2] = 15.0
         
         # 开始标签到各个标签的转移
         # START -> O 允许
