@@ -11,7 +11,7 @@ from model.config import (
 )
 import torch
 from torch.utils.data import DataLoader
-from transformers import BertTokenizer, get_linear_schedule_with_warmup
+from transformers import BertTokenizer, get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup
 from torch.optim import AdamW
 import argparse
 import pandas as pd
@@ -64,10 +64,48 @@ def load_allusion_dict(dict_file=ALLUSION_DICT_PATH):
     
     return allusion_dict, type_label2id, id2type_label, num_types
 
+def analyze_type_confusion(predictions, labels, id2type_label):
+    """分析类别混淆情况"""
+    confusion_dict = {}
+    for pred, true in zip(predictions, labels):
+        if pred != true:
+            true_type = id2type_label[true.item()]
+            pred_type = id2type_label[pred.item()]
+            key = (true_type, pred_type)
+            confusion_dict[key] = confusion_dict.get(key, 0) + 1
+    
+    # 按混淆次数排序
+    sorted_confusion = sorted(confusion_dict.items(), key=lambda x: x[1], reverse=True)
+    return sorted_confusion
+
 def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler, 
-                device, num_epochs, save_dir, task):
+                device, num_epochs, save_dir, task, id2type_label=None):
+    """
+    训练模型
+    Args:
+        model: 模型
+        train_dataloader: 训练数据加载器
+        val_dataloader: 验证数据加载器
+        optimizer: 优化器
+        scheduler: 学习率调度器
+        device: 设备
+        num_epochs: 训练轮数
+        save_dir: 模型保存目录
+        task: 任务类型 ('position' 或 'type')
+        id2type_label: 类型标签id到名称的映射字典
+    """
+    if task == 'type' and id2type_label is None:
+        raise ValueError("id2type_label must be provided for type classification task")
+
+    # 添加早停相关变量
+    patience = 3  # 连续3次无改善则停止
+    min_improvement = 0.005  # 最小改善阈值0.5%
+    no_improvement_count = 0
+    best_top1_accuracy = 0
+    
     best_val_loss = float('inf')
-    best_f1 = 0  # 添加F1指标跟踪
+    best_f1 = 0
+    best_accuracy = 0
     
     # 计算打印频率
     total_batches = len(train_dataloader)
@@ -77,6 +115,17 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
     train_log_file = os.path.join(save_dir, f'train_loss_{task}.txt')
     val_log_file = os.path.join(save_dir, f'val_loss_{task}.txt')
     batch_log_file = os.path.join(save_dir, f'batch_loss_{task}.txt')
+    
+    # 在训练开始时记录超参数
+    print(f"\nTraining {task.capitalize()} Task with parameters:")
+    if task == 'position':
+        print(f"B/I Label Weight: {model.pos_weight}")
+        with open(train_log_file, 'a', encoding='utf-8') as f:
+            f.write(f"\n=== Training with Parameters ===\n")
+            f.write(f"B/I Label Weight: {model.pos_weight}\n")
+        with open(val_log_file, 'a', encoding='utf-8') as f:
+            f.write(f"\n=== Training with Parameters ===\n")
+            f.write(f"B/I Label Weight: {model.pos_weight}\n")
     
     print(f"Total batches per epoch: {total_batches}")
     print(f"Will print progress every {print_freq} batches")
@@ -111,6 +160,7 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
                     position_labels=position_labels
                 )
             else:  # task == 'type'
+                
                 type_labels = batch['type_labels'].to(device)
                 target_positions = batch['target_positions'].to(device)
                 loss = model(
@@ -123,9 +173,17 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
                 )
             
             loss.backward()
+            
+            # 梯度裁剪
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            
+            # 优化器步进
             optimizer.step()
-            scheduler.step()
+            scheduler.step()  # 更新学习率
+            optimizer.zero_grad()
+            
+            # 记录当前学习率
+            current_lr = scheduler.get_last_lr()[0]
             
             # 记录当前batch的损失
             current_loss = loss.item()
@@ -152,11 +210,20 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
         val_loss = 0
         val_steps = 0
         
-        # 添加混淆矩阵统计
-        b_tp, b_fp, b_fn = 0, 0, 0  # B标签的true positive, false positive, false negative
-        i_tp, i_fp, i_fn = 0, 0, 0  # I标签
-        o_tp, o_fp, o_fn = 0, 0, 0  # O标签
-        
+        if task == 'position':
+            # 位置识别任务的统计变量
+            b_tp, b_fp, b_fn = 0, 0, 0
+            i_tp, i_fp, i_fn = 0, 0, 0
+            o_tp, o_fp, o_fn = 0, 0, 0
+        else:  # task == 'type'
+            # 类型识别任务的统计变量
+            val_predictions = []
+            val_labels = []
+            top1_correct = 0
+            top3_correct = 0
+            top5_correct = 0
+            total = 0
+
         with torch.no_grad():
             for batch in val_dataloader:
                 input_ids = batch['input_ids'].to(device)
@@ -215,33 +282,51 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
                                 else: o_fn += 1
                             if p == 0:  # 预测标签是O
                                 if l != 0: o_fp += 1
-                    
-                else:  # task == 'type'
+                                
+                if task == 'type':
                     type_labels = batch['type_labels'].to(device)
                     target_positions = batch['target_positions'].to(device)
-                    # 获取损失
+                    
+                    
+                    # 获取损失值
                     loss = model(
                         input_ids=input_ids,
                         attention_mask=attention_mask,
                         dict_features=dict_features,
                         task='type',
                         target_positions=target_positions,
-                        type_labels=type_labels,
+                        type_labels=type_labels
                     )
+                    
                     # 获取预测结果
-                    predictions = model(
+                    pred_top5 = model(
                         input_ids=input_ids,
                         attention_mask=attention_mask,
                         dict_features=dict_features,
                         task='type',
-                        target_positions=target_positions,
+                        target_positions=target_positions
                     )
-                    # 计算准确率
-                    correct = (predictions == type_labels).sum().item()
-                    total = len(type_labels)
                     
-                val_loss += loss.item()
-                val_steps += 1
+                    predictions = pred_top5['predictions']  # [batch_size, 5]
+                    probabilities = pred_top5['probabilities']  # [batch_size, 5]
+                    
+                    # 计算top-k准确率
+                    batch_size = type_labels.size(0)
+                    total += batch_size
+                    for pred_top_k, label in zip(predictions, type_labels):
+                        if label in pred_top_k[:1]:  # top1
+                            top1_correct += 1
+                        if label in pred_top_k[:3]:  # top3
+                            top3_correct += 1
+                        if label in pred_top_k[:5]:  # top5
+                            top5_correct += 1
+                    
+                    # 收集预测和真实标签（只收集top1预测用于混淆矩阵）
+                    val_predictions.extend(predictions[:, 0].cpu().tolist())
+                    val_labels.extend(type_labels.cpu().tolist())
+                    
+                    val_loss += loss.item()
+                    val_steps += 1
         
         # 计算整个验证集的统计信息
         val_loss = val_loss / val_steps
@@ -257,69 +342,144 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
             f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
             return precision, recall, f1
         
-        print("\nDetailed Metrics:")
-        # B标签指标
-        b_precision, b_recall, b_f1 = calculate_metrics(b_tp, b_fp, b_fn)
-        print(f"B Label - Precision: {b_precision:.4f}, Recall: {b_recall:.4f}, F1: {b_f1:.4f}")
-        print(f"         TP: {b_tp}, FP: {b_fp}, FN: {b_fn}")
-        
-        # I标签指标
-        i_precision, i_recall, i_f1 = calculate_metrics(i_tp, i_fp, i_fn)
-        print(f"I Label - Precision: {i_precision:.4f}, Recall: {i_recall:.4f}, F1: {i_f1:.4f}")
-        print(f"         TP: {i_tp}, FP: {i_fp}, FN: {i_fn}")
-        
-        # O标签指标
-        o_precision, o_recall, o_f1 = calculate_metrics(o_tp, o_fp, o_fn)
-        print(f"O Label - Precision: {o_precision:.4f}, Recall: {o_recall:.4f}, F1: {o_f1:.4f}")
-        print(f"         TP: {o_tp}, FP: {o_fp}, FN: {o_fn}")
-        
-        # 计算宏平均
-        macro_precision = (b_precision + i_precision + o_precision) / 3
-        macro_recall = (b_recall + i_recall + o_recall) / 3
-        macro_f1 = b_f1*0.4 + i_f1*0.4 + o_f1*0.2
-        print(f"\nMacro Average - Precision: {macro_precision:.4f}, Recall: {macro_recall:.4f}, F1: {macro_f1:.4f}")
-        
+        if task == 'position':
+            print("\nPosition Task Detailed Metrics:")
+            # B标签指标
+            b_precision, b_recall, b_f1 = calculate_metrics(b_tp, b_fp, b_fn)
+            print(f"B Label - Precision: {b_precision:.4f}, Recall: {b_recall:.4f}, F1: {b_f1:.4f}")
+            print(f"         TP: {b_tp}, FP: {b_fp}, FN: {b_fn}")
             
-        # 保存训练和验证损失
-        with open(val_log_file, 'a', encoding='utf-8') as f:
-            f.write(f'Epoch {epoch+1}: {val_loss:.4f}\n')
-            f.write(f"Validation Loss: {val_loss:.4f}\n")
-            f.write(f"B Label - Precision: {b_precision:.4f}, Recall: {b_recall:.4f}, F1: {b_f1:.4f}\n")
-            f.write(f"         TP: {b_tp}, FP: {b_fp}, FN: {b_fn}\n")
-            f.write(f"I Label - Precision: {i_precision:.4f}, Recall: {i_recall:.4f}, F1: {i_f1:.4f}\n")
-            f.write(f"         TP: {i_tp}, FP: {i_fp}, FN: {i_fn}\n")
-            f.write(f"O Label - Precision: {o_precision:.4f}, Recall: {o_recall:.4f}, F1: {o_f1:.4f}\n")
-            f.write(f"         TP: {o_tp}, FP: {o_fp}, FN: {o_fn}\n")
-            f.write(f"\nMacro Average - Precision: {macro_precision:.4f}, Recall: {macro_recall:.4f}, F1: {macro_f1:.4f}\n")
+            # I标签指标
+            i_precision, i_recall, i_f1 = calculate_metrics(i_tp, i_fp, i_fn)
+            print(f"I Label - Precision: {i_precision:.4f}, Recall: {i_recall:.4f}, F1: {i_f1:.4f}")
+            print(f"         TP: {i_tp}, FP: {i_fp}, FN: {i_fn}")
+            
+            # O标签指标
+            o_precision, o_recall, o_f1 = calculate_metrics(o_tp, o_fp, o_fn)
+            print(f"O Label - Precision: {o_precision:.4f}, Recall: {o_recall:.4f}, F1: {o_f1:.4f}")
+            print(f"         TP: {o_tp}, FP: {o_fp}, FN: {o_fn}")
+            
+            # 计算宏平均
+            macro_precision = (b_precision + i_precision + o_precision) / 3
+            macro_recall = (b_recall + i_recall + o_recall) / 3
+            macro_f1 = b_f1*0.4 + i_f1*0.4 + o_f1*0.2
+            print(f"\nMacro Average - Precision: {macro_precision:.4f}, Recall: {macro_recall:.4f}, F1: {macro_f1:.4f}")
+            
+            # 使用macro_f1作为保存指标
+            if macro_f1 > best_f1:
+                best_f1 = macro_f1
+                torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
+                    'val_loss': val_loss,
+                    'macro_f1': macro_f1,  # 保存F1指标
+                    'task': task,
+                }, os.path.join(save_dir, 'best_model.pt'))
+                print(f"\nModel saved with new best macro F1: {macro_f1:.4f}")
+            else:
+                print(f"\nNo improvement in macro F1. Current best: {best_f1:.4f}")
+            
+            # 保存训练和验证损失
+            with open(val_log_file, 'a', encoding='utf-8') as f:
+                f.write(f'Epoch {epoch+1}: {val_loss:.4f}\n')
+                f.write(f"Validation Loss: {val_loss:.4f}\n")
+                f.write(f"B Label - Precision: {b_precision:.4f}, Recall: {b_recall:.4f}, F1: {b_f1:.4f}\n")
+                f.write(f"         TP: {b_tp}, FP: {b_fp}, FN: {b_fn}\n")
+                f.write(f"I Label - Precision: {i_precision:.4f}, Recall: {i_recall:.4f}, F1: {i_f1:.4f}\n")
+                f.write(f"         TP: {i_tp}, FP: {i_fp}, FN: {i_fn}\n")
+                f.write(f"O Label - Precision: {o_precision:.4f}, Recall: {o_recall:.4f}, F1: {o_f1:.4f}\n")
+                f.write(f"         TP: {o_tp}, FP: {o_fp}, FN: {o_fn}\n")
+                f.write(f"\nMacro Average - Precision: {macro_precision:.4f}, Recall: {macro_recall:.4f}, F1: {macro_f1:.4f}\n")
         
-        
-        # 在验证阶段结束后，计算当前epoch的macro_f1
-        if macro_f1 > best_f1:
-            best_f1 = macro_f1
-            # 保存模型
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
-                'val_loss': val_loss,
-                'macro_f1': macro_f1,  # 添加F1指标到保存信息中
-            }, os.path.join(save_dir, 'best_model.pt'))
-            print(f"Model saved with new best F1: {macro_f1:.4f}")
+        elif task == 'type':
+            print("\nType Task Detailed Metrics:")
+            # 计算准确率
+            top1_accuracy = top1_correct / total
+            top3_accuracy = top3_correct / total
+            top5_accuracy = top5_correct / total
+            
+            # 分析类别混淆
+            confusion_pairs = analyze_type_confusion(
+                torch.tensor(val_predictions), 
+                torch.tensor(val_labels), 
+                id2type_label
+            )
+            
+            # 打印验证结果
+            print(f"\n=== Type Classification Results ===")
+            print(f"Validation Loss: {val_loss:.4f}")
+            print(f"Top-1 Accuracy: {top1_accuracy:.4f}")
+            print(f"Top-3 Accuracy: {top3_accuracy:.4f}")
+            print(f"Top-5 Accuracy: {top5_accuracy:.4f}")
+            
+            print("\nTop 10 Most Confused Type Pairs:")
+            for (true_type, pred_type), count in confusion_pairs[:10]:
+                print(f"True: {true_type} -> Predicted: {pred_type}, Count: {count}")
+            
+            # 记录到日志文件
+            with open(val_log_file, 'a', encoding='utf-8') as f:
+                f.write(f"\nEpoch {epoch+1}:\n")
+                f.write(f"Validation Loss: {val_loss:.4f}\n")
+                f.write(f"Top-1 Accuracy: {top1_accuracy:.4f}\n")
+                f.write(f"Top-3 Accuracy: {top3_accuracy:.4f}\n")
+                f.write(f"Top-5 Accuracy: {top5_accuracy:.4f}\n")
+                f.write("\nTop 10 Most Confused Type Pairs:\n")
+                for (true_type, pred_type), count in confusion_pairs[:10]:
+                    f.write(f"True: {true_type} -> Predicted: {pred_type}, Count: {count}\n")
+            
+            # 使用top1准确率作为模型保存的指标
+            if top1_accuracy > best_top1_accuracy:
+                best_top1_accuracy = top1_accuracy
+                torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
+                    'val_loss': val_loss,
+                    'top1_accuracy': top1_accuracy,
+                    'top3_accuracy': top3_accuracy,
+                    'top5_accuracy': top5_accuracy,
+                }, os.path.join(save_dir, 'best_model_type.pt'))
+                print(f"\nModel saved with new best top-1 accuracy: {top1_accuracy:.4f}")
+            
+            # 早停检查
+            if top1_accuracy < best_top1_accuracy - min_improvement:
+                no_improvement_count += 1
+                if no_improvement_count >= patience:
+                    print(f"\nNo improvement in top-1 accuracy for {patience} epochs. Stopping training.")
+                    break
         
         # 原有的基于损失的保存逻辑可以保留，但改为保存一个单独的文件
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss': best_val_loss,
-                'task': task,
-            }, os.path.join(save_dir, 'best_model.pt'))
-            print(f"Saved best model at epoch {epoch+1}")
-        else:
-            print(f"No improvement in validation loss. Current best loss: {best_val_loss:.4f}")
+        
+
+def get_optimizer_and_scheduler(model, train_dataloader, num_epochs, warmup_ratio=0.1, 
+                              initial_lr=2e-5, min_lr=1e-6):
+    # 计算总训练步数
+    total_steps = len(train_dataloader) * num_epochs
+    
+    # 计算预热步数
+    warmup_steps = int(total_steps * warmup_ratio)
+    
+    # 创建优化器
+    optimizer = AdamW([
+        # BERT层使用较小的学习率
+        {'params': model.bert.parameters(), 'lr': initial_lr},
+        # 其他层使用较大的学习率
+        {'params': [p for n, p in model.named_parameters() if not n.startswith('bert.')], 
+         'lr': initial_lr * 5}
+    ])
+    
+    # 创建学习率调度器
+    scheduler = get_cosine_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=warmup_steps,
+        num_training_steps=total_steps,
+        num_cycles=0.5,  # 半个余弦周期
+    )
+    
+    return optimizer, scheduler
 
 def main():
     parser = argparse.ArgumentParser()
@@ -399,16 +559,11 @@ def main():
         if not os.path.exists(checkpoint_path):
             raise FileNotFoundError("Please complete Stage 1 (position) training first!")
             
+        # 直接加载所有参数
         checkpoint = torch.load(checkpoint_path)
-        stage1_state_dict = checkpoint['model_state_dict']
-        
-        # 只加载bert和bilstm的参数
-        new_state_dict = {
-            name: param for name, param in stage1_state_dict.items()
-            if name.startswith('bert') or name.startswith('bilstm')
-        }
-        model.load_state_dict(new_state_dict, strict=False)
-        print("Loaded BERT and BiLSTM parameters from Stage 1 model")
+        model.load_state_dict(checkpoint['model_state_dict'])
+        print("Loaded all parameters from Stage 1 model")
+        print("Note: Position recognition parameters will be preserved but not updated")
         
         train_dataset = PoetryNERDataset(
             train_file, tokenizer, MAX_SEQ_LEN,
@@ -442,19 +597,19 @@ def main():
         collate_fn=val_dataset.collate_fn
     )
     
-    # 优化器和学习率调度器
-    optimizer = AdamW(model.parameters(), lr=LEARNING_RATE)
-    total_steps = len(train_dataloader) * EPOCHS
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=total_steps * 0.1,
-        num_training_steps=total_steps
+    # 使用新的优化器和调度器
+    optimizer, scheduler = get_optimizer_and_scheduler(
+        model, 
+        train_dataloader,
+        EPOCHS,
+        warmup_ratio=0.1,
+        initial_lr=2e-5
     )
     
     # 训练模型
     train_model(
         model, train_dataloader, val_dataloader, optimizer, scheduler,
-        device, EPOCHS, SAVE_DIR, args.stage
+        device, EPOCHS, SAVE_DIR, args.stage, id2type_label
     )
 
 def test():

@@ -9,12 +9,14 @@ from TorchCRF import CRF
 from scipy.sparse import csr_matrix
 from model.config import BERT_MODEL_PATH, OPTIMAL_EPS, min_samples_size
 from difflib import SequenceMatcher
+import torch.nn.functional as F
 
 class AllusionBERTCRF(nn.Module):
     
     #num_types: 类型数量 需要在使用时通过建立allution_types.txt的映射关系的同时获得
-    def __init__(self, bert_path, num_types, dict_size):
+    def __init__(self, bert_path, num_types, dict_size, pos_weight=150):
         super(AllusionBERTCRF, self).__init__()
+        self.pos_weight = pos_weight  # 添加权重参数
         # BERT基础模型
         self.bert = BertModel.from_pretrained(bert_path)
         self.bert_hidden_size = self.bert.config.hidden_size
@@ -169,21 +171,20 @@ class AllusionBERTCRF(nn.Module):
         
         return weighted_sum
 
-    def weighted_crf_loss(self, emissions, labels, mask, pos_weight=4.0):
+    def weighted_crf_loss(self, emissions, labels, mask):
         """
         计算带权重的CRF损失
         Args:
             emissions: [batch_size, seq_len, num_tags]
             labels: [batch_size, seq_len]
             mask: [batch_size, seq_len]
-            pos_weight: 正样本权重
         """
         batch_size, seq_len = labels.shape
         
         # 创建权重矩阵
         weights = torch.ones_like(labels, dtype=torch.float)
         # 将典故位置(B/I)的权重设置为pos_weight
-        weights = torch.where(labels > 0, torch.tensor(pos_weight, device=labels.device), weights)
+        weights = torch.where(labels > 0, torch.tensor(self.pos_weight, device=labels.device), weights)
         
         # 计算基础CRF损失
         base_loss = -self.position_crf(
@@ -206,6 +207,72 @@ class AllusionBERTCRF(nn.Module):
         weighted_loss = base_loss * weights.mean(dim=1)
         return weighted_loss.mean()
 
+    def batch_attention_pooling(self, hidden_states, start_positions, end_positions):
+        """
+        批量注意力池化层
+        Args:
+            hidden_states: [batch_size, seq_len, hidden_size*2]
+            start_positions: [batch_size]
+            end_positions: [batch_size]
+        Returns:
+            pooled_features: [batch_size, hidden_size*2]
+        """
+        batch_size = hidden_states.size(0)
+        max_span_length = (end_positions - start_positions + 1).max()
+        
+        # 创建批处理掩码
+        span_masks = torch.arange(max_span_length, device=hidden_states.device)[None, :] < \
+                    (end_positions - start_positions + 1)[:, None]  # [batch_size, max_span_length]
+        
+        # 收集所有跨度的特征
+        batch_spans = []
+        for i in range(batch_size):
+            span = hidden_states[i, start_positions[i]:end_positions[i]+1]
+            # 填充到最大长度
+            if span.size(0) < max_span_length:
+                padding = torch.zeros(max_span_length - span.size(0), span.size(1), 
+                                    device=span.device)
+                span = torch.cat([span, padding], dim=0)
+            batch_spans.append(span)
+        
+        batch_spans = torch.stack(batch_spans)  # [batch_size, max_span_length, hidden_size*2]
+        
+        # 计算注意力分数
+        attention_weights = self.attention(batch_spans)  # [batch_size, max_span_length, 1]
+        
+        # 应用掩码
+        attention_weights = attention_weights.masked_fill(~span_masks.unsqueeze(-1), float('-inf'))
+        attention_weights = torch.softmax(attention_weights, dim=1)  # [batch_size, max_span_length, 1]
+        
+        # 加权求和
+        weighted_sum = torch.sum(batch_spans * attention_weights, dim=1)  # [batch_size, hidden_size*2]
+        
+        return weighted_sum
+
+    def type_classification_loss(self, logits, labels, label_smoothing=0.1, gamma=2.0):
+        """
+        改进的类型分类损失函数
+        Args:
+            logits: [batch_size, num_types]
+            labels: [batch_size]
+            label_smoothing: 标签平滑参数
+            gamma: 焦点损失参数
+        """
+        # 标签平滑
+        num_classes = logits.size(-1)
+        smooth_labels = torch.zeros_like(logits).scatter_(
+            1, labels.unsqueeze(1), 1-label_smoothing
+        ) + label_smoothing/num_classes
+        
+        # 计算焦点损失
+        log_probs = F.log_softmax(logits, dim=-1)
+        probs = torch.exp(log_probs)
+        ce_loss = -(smooth_labels * log_probs).sum(dim=-1)  # 交叉熵
+        pt = torch.sum(smooth_labels * probs, dim=-1)
+        focal_loss = ce_loss * (1 - pt).pow(gamma)
+        
+        return focal_loss.mean()
+
     def forward(self, input_ids, attention_mask, dict_features, task='position', 
                 position_labels=None, type_labels=None, target_positions=None):
         """
@@ -217,7 +284,7 @@ class AllusionBERTCRF(nn.Module):
             task: 'position' 或 'type'，指定当前任务
             position_labels: 位置标签 (B/I/O)    已考虑[CLS]和[SEP]
             type_labels: 类型标签    已考虑[CLS]和[SEP]
-            target_positions: 待判断词的位置索引 [batch_size, 2] (start, end)
+            target_positions: 待判断词的位置索引 [batch_size, 2] (start, end) 已考虑[CLS]和[SEP]
         """
         # 1. BERT编码
         outputs = self.bert(input_ids, attention_mask=attention_mask)
@@ -251,8 +318,7 @@ class AllusionBERTCRF(nn.Module):
                 loss = self.weighted_crf_loss(
                     position_emissions,
                     position_labels,
-                    mask=mask,
-                    pos_weight=150
+                    mask=mask
                 )
                 return loss
             
@@ -294,28 +360,31 @@ class AllusionBERTCRF(nn.Module):
                 return predictions
         
         elif task == 'type':
-            # 获取目标位置的特征
+            # 使用批处理版本的注意力池化
             batch_size = input_ids.size(0)
-            target_features = []
+            start_positions = target_positions[:, 0]
+            end_positions = target_positions[:, 1]
+            target_features = self.batch_attention_pooling(
+                lstm_output, start_positions, end_positions
+            )
             
-            # 对每个样本提取目标位置的特征
-            for i in range(batch_size):
-                start, end = target_positions[i]
-                # 使用注意力池化
-                span_features = self.attention_pooling(lstm_output[i, start:end+1])
-                target_features.append(span_features)
-            
-            target_features = torch.stack(target_features)  # [batch_size, lstm_hidden*2]
-        
             # 类型分类
             type_logits = self.type_classifier(target_features)  # [batch_size, num_types]
             
             if type_labels is not None:
-                loss = nn.CrossEntropyLoss()(type_logits, type_labels)
+                # 训练模式：使用改进的损失函数
+                # 将 type_labels 从 [batch_size, 1] 转换为 [batch_size]
+                type_labels = type_labels.squeeze(1)
+                loss = self.type_classification_loss(type_logits, type_labels)
                 return loss
             else:
-                type_pred = torch.argmax(type_logits, dim=-1)
-                return type_pred
+                # 预测模式：返回 top-5 预测结果和概率
+                probs = F.softmax(type_logits, dim=-1)
+                top5_probs, top5_indices = torch.topk(probs, k=5, dim=-1)
+                return {
+                    'predictions': top5_indices,
+                    'probabilities': top5_probs
+                }
 
 def prepare_sparse_features(batch_texts, allusion_dict, max_active=5):
     """将文本批量转换为稀疏特征格式"""
