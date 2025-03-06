@@ -16,7 +16,7 @@ from process.clustering import load_allusion_data
 '''
 
 
-def load_representative_dict(file_path='data/cleared_allusion_type.csv'):
+def load_representative_dict(file_path='data/allusion_type.csv'):
     """加载代表词字典"""
     df = pd.read_csv(file_path, encoding='utf-8', sep='\t')
     rep_dict = {}

@@ -325,8 +325,8 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
                     val_predictions.extend(predictions[:, 0].cpu().tolist())
                     val_labels.extend(type_labels.cpu().tolist())
                     
-                    val_loss += loss.item()
-                    val_steps += 1
+                val_loss += loss.item()
+                val_steps += 1
         
         # 计算整个验证集的统计信息
         val_loss = val_loss / val_steps
@@ -376,7 +376,7 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
                     'val_loss': val_loss,
                     'macro_f1': macro_f1,  # 保存F1指标
                     'task': task,
-                }, os.path.join(save_dir, 'best_model.pt'))
+                }, os.path.join(save_dir, f'best_model_{task}.pt'))
                 print(f"\nModel saved with new best macro F1: {macro_f1:.4f}")
             else:
                 print(f"\nNo improvement in macro F1. Current best: {best_f1:.4f}")
@@ -502,8 +502,8 @@ def main():
     os.makedirs(SAVE_DIR, exist_ok=True)
     
     # 预处理特征和映射文件路径
-    features_path = os.path.join(DATA_DIR, 'allusion_features_large_dict.pt')
-    mapping_path = os.path.join(DATA_DIR, 'allusion_mapping_large_dict.json')
+    features_path = os.path.join(DATA_DIR, 'allusion_features_strictly_dict.pt')
+    mapping_path = os.path.join(DATA_DIR, 'allusion_mapping_strictly_dict.json')
     
     # 检查预处理文件是否存在
     if not os.path.exists(features_path) or not os.path.exists(mapping_path):
@@ -555,7 +555,7 @@ def main():
         model = AllusionBERTCRF(BERT_MODEL_PATH, num_types, dict_size).to(device)
         
         # 加载模型参数
-        checkpoint_path = os.path.join(SAVE_DIR, 'best_model.pt')
+        checkpoint_path = os.path.join(SAVE_DIR, f'best_model_position.pt')
         if not os.path.exists(checkpoint_path):
             raise FileNotFoundError("Please complete Stage 1 (position) training first!")
             
