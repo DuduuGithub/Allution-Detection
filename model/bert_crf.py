@@ -154,23 +154,6 @@ class AllusionBERTCRF(nn.Module):
         
         return transformed_features
 
-    def attention_pooling(self, hidden_states):
-        """
-        注意力池化层
-        Args:
-            hidden_states: [span_length, hidden_size*2]
-        Returns:
-            pooled_features: [hidden_size*2]
-        """
-        # 计算注意力分数
-        attention_weights = self.attention(hidden_states)  # [span_length, 1]
-        attention_weights = torch.softmax(attention_weights, dim=0)  # [span_length, 1]
-        
-        # 加权求和
-        weighted_sum = torch.sum(hidden_states * attention_weights, dim=0)  # [hidden_size*2]
-        
-        return weighted_sum
-
     def weighted_crf_loss(self, emissions, labels, mask):
         """
         计算带权重的CRF损失

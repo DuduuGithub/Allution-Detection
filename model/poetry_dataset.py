@@ -5,6 +5,8 @@ from transformers import BertTokenizer
 import csv
 from torch.utils.data import DataLoader
 import json
+import random
+import os
 
 def load_sentence_mappings(mapping_path):
     """
@@ -16,7 +18,7 @@ def load_sentence_mappings(mapping_path):
 
 class PoetryNERDataset(Dataset):
     def __init__(self, file_path, tokenizer, max_len, type_label2id, id2type_label, 
-                 task='position', features_path=None, mapping_path=None):
+                 task='position', features_path=None, mapping_path=None, positive_sample_ratio=0.85):
         """
         Args:
             file_path: 数据文件路径
@@ -25,12 +27,14 @@ class PoetryNERDataset(Dataset):
             task: 'position' 用于典故位置识别, 'type' 用于典故类型分类
             features_path: 预处理特征文件路径
             mapping_path: 句子映射文件路径
+            positive_sample_ratio: 正样本的比例，默认0.85
         """
         self.tokenizer = tokenizer
         self.max_len = max_len
         self.type_label2id = type_label2id
         self.id2type_label = id2type_label
         self.task = task
+        self.positive_sample_ratio = positive_sample_ratio
         
         # 典故位置标注标签映射
         self.position_label2id = {
@@ -53,40 +57,144 @@ class PoetryNERDataset(Dataset):
     def read_data(self, file_path):
         """读取数据文件"""
         dataset = []
-        with open(file_path, 'r', encoding='utf-8') as f:
-            next(f)  # 跳过标题行
-            for line in f:
+        
+        # 如果是类型识别任务，需要加载负样本
+        if self.task == 'type':
+            # 加载主数据集
+            with open(file_path, 'r', encoding='utf-8') as f:
+                next(f)  # 跳过标题行
+                main_lines = f.readlines()
+                
+            # 处理主数据集
+            for line in main_lines:
                 if not line.strip() or '\t' not in line:
                     continue
                 
-                result = self.parse_line(line)
-                if result is None:
-                    continue
-                
-                if self.task == 'position':
+                # 根据设定的正例比例决定是否使用正常样本
+                if random.random() < self.positive_sample_ratio:
+                    result = self.parse_line(line, is_negative_sample=False)
+                    if result is not None:
+                        text, target_positions, type_label = result
+                        dataset.append({
+                            'text': text,
+                            'target_positions': target_positions,
+                            'target_type': type_label
+                        })
+            
+            # 计算需要的负样本数量
+            if self.positive_sample_ratio == 0:
+                # 如果正例比例为0，直接使用所有负样本
+                num_negative_needed = float('inf')  # 设置为无限大，表示使用所有可用的负样本
+            elif self.positive_sample_ratio == 1:
+                # 如果正例比例为1，不需要负样本
+                num_negative_needed = 0
+            else:
+                # 正常情况下的计算
+                num_negative_needed = int(len(dataset) * (1 - self.positive_sample_ratio) / self.positive_sample_ratio)
+            
+            negative_count = 0
+            
+            # 加载负样本数据集
+            negative_file = os.path.join(os.path.dirname(file_path), '3_1_2_final_position_dataset.csv')
+            if os.path.exists(negative_file):
+                with open(negative_file, 'r', encoding='utf-8') as f:
+                    next(f)  # 跳过标题行
+                    
+                    # 直接在读取过程中进行采样
+                    for line in f:
+                        if negative_count >= num_negative_needed and num_negative_needed != float('inf'):
+                            break
+                            
+                        parts = line.strip().split('\t')
+                        if len(parts) >= 5 and int(parts[4]) == 0:  # 检查是否为不含典故的样本
+                            # 当positive_sample_ratio为0时，接受所有负样本
+                            if self.positive_sample_ratio == 0 or random.random() < (num_negative_needed / 1000):
+                                result = self.parse_line(line, is_negative_sample=True)
+                                if result is not None:
+                                    text, target_positions, type_label = result
+                                    dataset.append({
+                                        'text': text,
+                                        'target_positions': target_positions,
+                                        'target_type': type_label
+                                    })
+                                    negative_count += 1
+            
+            print(f"Added {negative_count} negative samples out of {len(dataset)} total samples")
+            
+        else:
+            # 位置识别任务保持原有逻辑
+            with open(file_path, 'r', encoding='utf-8') as f:
+                next(f)
+                for line in f:
+                    if not line.strip() or '\t' not in line:
+                        continue
+                    result = self.parse_line(line)
+                    if result is None:
+                        continue
                     text, position_labels = result
                     dataset.append({
                         'text': text,
                         'position_labels': position_labels,
                     })
-                else:  # task == 'type'
-                    text, target_positions, type_label = result
-                    dataset.append({
-                        'text': text,
-                        'target_positions': target_positions,
-                        'target_type': type_label
-                    })
         
         return dataset
 
-    def parse_line(self, line):
-        """解析单行数据，提取诗句和标签"""
+    def parse_line(self, line, is_negative_sample=False):
+        """解析单行数据，提取诗句和标签
+        Args:
+            line: 数据行
+            is_negative_sample: 是否为负样本(不含典故的样本)
+        """
         parts = line.strip().split('\t')
         try:
             # 获取基本信息
             text = parts[0].strip()
             
-            if self.task == 'position':
+            if self.task == 'type':
+                if is_negative_sample:
+                    # 对于负样本，随机生成一个target position
+                    text_len = len(text)
+                    if text_len < 2:  # 文本太短，跳过
+                        return None
+                        
+                    # 随机选择一个位置作为target position
+                    start_pos = random.randint(0, text_len-2)  # -2确保至少有2个字符
+                    end_pos = min(start_pos + random.randint(1, 2), text_len-1)  # 随机长度1-2
+                    
+                    return text, (start_pos, end_pos), 0  # 0表示非典故类型
+                    
+                # 处理正常样本
+                variation_number = int(parts[4])
+                if variation_number == 0:  # 跳过无典故样本
+                    return None
+                    
+                allusion = parts[3].strip()
+                allusion_index = parts[5].strip()
+                
+                if not allusion_index:
+                    return None
+                
+                try:
+                    positions = eval(allusion_index)
+                    if not positions or not isinstance(positions, list):
+                        return None
+                    
+                    pos_group = positions[0]
+                    if not pos_group:
+                        return None
+                    
+                    type_label = self.type_label2id.get(allusion, -1)
+                    if type_label == -1:
+                        return None
+                    
+                    return text, (pos_group[0], pos_group[-1]), type_label
+                    
+                except (ValueError, SyntaxError) as e:
+                    print(f"Error parsing allusion index in line: {line}")
+                    print(f"Error details: {str(e)}")
+                    return None
+                
+            else:  # task == 'position'
                 # 位置识别任务
                 variation_number = int(parts[4])
                 
@@ -121,38 +229,6 @@ class PoetryNERDataset(Dataset):
                 # 将标签转换为ID
                 position_ids = [self.position_label2id[label] for label in position_labels]
                 return text, position_ids
-                
-            else:  # task == 'type'
-                # 类型识别任务
-                allusion = parts[3].strip()  # allusion列
-                allusion_index = parts[5].strip()  # allusion_index列
-                
-                if not allusion_index:  # 如果没有典故位置
-                    return None
-                
-                # 解析典故位置
-                try:
-                    positions = eval(allusion_index)  # 例如 "[[4, 5]]"
-                    if not positions or not isinstance(positions, list):
-                        return None
-                    
-                    # 获取第一组位置（因为数据集中每行只有一个位置组）
-                    pos_group = positions[0]  # 获取第一个（也是唯一的）位置组
-                    if not pos_group:  # 如果位置组为空
-                        return None
-                    
-                    # 设置类型标签
-                    type_label = self.type_label2id.get(allusion, -1)
-                    if type_label == -1:  # 如果找不到对应的类型
-                        return None
-                    
-                    # 返回文本、起始和结束位置（使用同一个位置组）
-                    return text, (pos_group[0], pos_group[-1]), type_label
-                    
-                except (ValueError, SyntaxError) as e:
-                    print(f"Error parsing allusion index in line: {line}")
-                    print(f"Error details: {str(e)}")
-                    return None
                 
         except (ValueError, IndexError) as e:
             print(f"Error parsing line: {line}")

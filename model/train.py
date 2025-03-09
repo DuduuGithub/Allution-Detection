@@ -7,7 +7,7 @@ from model.bert_crf import AllusionBERTCRF, prepare_sparse_features
 from model.config import (
     BERT_MODEL_PATH, MAX_SEQ_LEN, BATCH_SIZE, 
     POSITION_EPOCHS, TYPE_EPOCHS, LEARNING_RATE,
-    SAVE_DIR, DATA_DIR, ALLUSION_DICT_PATH
+    SAVE_DIR, DATA_DIR, ALLUSION_DICT_PATH, Test_DIR
 )
 import torch
 from torch.utils.data import DataLoader
@@ -555,7 +555,8 @@ def main():
         model = AllusionBERTCRF(BERT_MODEL_PATH, num_types, dict_size).to(device)
         
         # 加载模型参数
-        checkpoint_path = os.path.join(SAVE_DIR, f'best_model_position.pt')
+        # checkpoint_path = os.path.join(SAVE_DIR, f'best_model_position.pt')
+        checkpoint_path = os.path.join(Test_DIR, f'best_model_position.pt')
         if not os.path.exists(checkpoint_path):
             raise FileNotFoundError("Please complete Stage 1 (position) training first!")
             
