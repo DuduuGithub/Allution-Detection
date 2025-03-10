@@ -5,6 +5,7 @@ from transformers import BertTokenizer
 import csv
 from torch.utils.data import DataLoader
 import json
+import random  # 添加在文件开头的import部分
 
 def load_sentence_mappings(mapping_path):
     """
@@ -124,6 +125,26 @@ class PoetryNERDataset(Dataset):
                 
             else:  # task == 'type'
                 # 类型识别任务
+                variation_number = int(parts[4])
+                
+                # 如果是不包含典故的样本
+                if variation_number == 0:
+                    # 随机选择一个长度在2到4之间的片段
+                    text_length = len(text)
+                    if text_length < 2:
+                        return None
+                    
+                    # 确定随机片段的长度
+                    span_length = random.randint(2, min(3, text_length))
+                    # 确定随机片段的起始位置
+                    max_start = text_length - span_length
+                    if max_start < 0:
+                        return None
+                    start_pos = random.randint(0, max_start)
+                    
+                    # 返回文本、随机选择的起始和结束位置、类型标签为0（表示非典故）
+                    return text, (start_pos, start_pos + span_length - 1), 0
+                
                 allusion = parts[3].strip()  # allusion列
                 allusion_index = parts[5].strip()  # allusion_index列
                 
@@ -149,14 +170,10 @@ class PoetryNERDataset(Dataset):
                     # 返回文本、起始和结束位置（使用同一个位置组）
                     return text, (pos_group[0], pos_group[-1]), type_label
                     
-                except (ValueError, SyntaxError) as e:
-                    print(f"Error parsing allusion index in line: {line}")
-                    print(f"Error details: {str(e)}")
+                except (ValueError, SyntaxError):
                     return None
                 
-        except (ValueError, IndexError) as e:
-            print(f"Error parsing line: {line}")
-            print(f"Error details: {str(e)}")
+        except (IndexError, ValueError):
             return None
         
     def get_allusion_positions(self, position_labels, type_labels):

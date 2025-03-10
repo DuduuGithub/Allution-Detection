@@ -386,6 +386,41 @@ class AllusionBERTCRF(nn.Module):
                     'probabilities': top5_probs
                 }
 
+    def freeze_shared_parameters(self):
+        """冻结共享参数（BERT和BiLSTM层）"""
+        # 冻结BERT
+        for param in self.bert.parameters():
+            param.requires_grad = False
+        
+        # 冻结BiLSTM
+        for param in self.bilstm.parameters():
+            param.requires_grad = False
+        
+        # 冻结字典特征相关层
+        for param in self.dict_embedding.parameters():
+            param.requires_grad = False
+        for param in self.dict_transform.parameters():
+            param.requires_grad = False
+
+    def verify_frozen_parameters(self):
+        """验证共享参数是否被正确冻结"""
+        for name, param in self.named_parameters():
+            if any(layer in name for layer in ['bert', 'bilstm', 'dict_embedding', 'dict_transform']):
+                if param.requires_grad:
+                    print(f"Warning: {name} should be frozen but is not!")
+            elif any(layer in name for layer in ['type_classifier', 'attention']):
+                if not param.requires_grad:
+                    print(f"Warning: {name} should be trainable but is frozen!")
+
+    def adjust_shared_learning_rate(self, epoch, base_lr):
+        """根据训练轮数调整共享参数的学习率"""
+        # 前10个epoch保持较大学习率以快速学习
+        if epoch < 10:
+            return base_lr
+        # 之后逐渐降低学习率
+        else:
+            return base_lr * 0.1
+
 def prepare_sparse_features(batch_texts, allusion_dict, max_active=5):
     """将文本批量转换为稀疏特征格式"""
     batch_size = len(batch_texts)

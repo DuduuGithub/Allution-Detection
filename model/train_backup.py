@@ -454,58 +454,44 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
         # 原有的基于损失的保存逻辑可以保留，但改为保存一个单独的文件
         
 
-def get_optimizer_and_scheduler(model, train_dataloader, num_epochs, current_epoch,
-                              task='position', warmup_ratio=0.1, initial_lr=2e-5):
+def get_optimizer_and_scheduler(model, train_dataloader, num_epochs, task='position',
+                              warmup_ratio=0.1, initial_lr=2e-5):
     """获取优化器和学习率调度器"""
-    # 获取共享参数的学习率
-    shared_lr = model.adjust_shared_learning_rate(current_epoch, initial_lr)
-    
-    # 创建参数组，确保每个参数只出现在一个组中
-    shared_params = []
-    position_params = []
-    type_params = []
-    
-    for name, param in model.named_parameters():
-        # 首先检查任务特定参数
-        if any(layer in name for layer in ['position_classifier', 'position_crf']):
-            position_params.append(param)
-        elif any(layer in name for layer in ['type_classifier', 'attention']):
-            type_params.append(param)
-        # 其他都是共享参数
-        else:
-            shared_params.append(param)
-    
-    optimizer_grouped_parameters = [
-        # 共享参数组
-        {
-            'params': shared_params,
-            'lr': shared_lr
-        },
-        # 位置识别特定参数
-        {
-            'params': position_params,
-            'lr': initial_lr * (5 if task == 'position' else 0.1)
-        },
-        # 类型识别特定参数
-        {
-            'params': type_params,
-            'lr': initial_lr * (5 if task == 'type' else 0.1)
-        }
-    ]
-    
-    # 只添加非空的参数组
-    final_param_groups = [
-        group for group in optimizer_grouped_parameters
-        if len(group['params']) > 0
-    ]
+    if task == 'position':
+        # 位置识别任务：更新所有参数
+        optimizer_grouped_parameters = [
+            {
+                'params': [p for n, p in model.named_parameters() if 'bert' in n],
+                'lr': initial_lr
+            },
+            {
+                'params': [p for n, p in model.named_parameters() if 'bert' not in n],
+                'lr': initial_lr * 5
+            }
+        ]
+    else:  # task == 'type'
+        # 类型识别任务：只更新未冻结的参数
+        optimizer_grouped_parameters = [
+            {
+                'params': [p for n, p in model.named_parameters() 
+                          if p.requires_grad and 'type_classifier' in n],
+                'lr': initial_lr * 5
+            },
+            {
+                'params': [p for n, p in model.named_parameters() 
+                          if p.requires_grad and 'attention' in n],
+                'lr': initial_lr * 5
+            }
+        ]
     
     # 创建优化器
-    optimizer = AdamW(final_param_groups)
+    optimizer = AdamW(optimizer_grouped_parameters)
     
     # 计算总训练步数
     total_steps = len(train_dataloader) * num_epochs
     warmup_steps = int(total_steps * warmup_ratio)
     
+    # 创建学习率调度器
     scheduler = get_cosine_schedule_with_warmup(
         optimizer,
         num_warmup_steps=warmup_steps,
@@ -513,15 +499,14 @@ def get_optimizer_and_scheduler(model, train_dataloader, num_epochs, current_epo
         num_cycles=0.5
     )
     
-    # 打印参数组信息以便调试
-    print("\nOptimizer parameter groups:")
-    for i, group in enumerate(final_param_groups):
-        param_count = sum(p.numel() for p in group['params'])
-        print(f"Group {i}: {param_count} parameters, learning rate: {group['lr']}")
-    
     return optimizer, scheduler
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--stage', type=str, choices=['position', 'type'], 
+                       required=True, help='Training stage: position or type')
+    args = parser.parse_args()
+    
     # 基础配置
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
@@ -544,6 +529,11 @@ def main():
     if not os.path.exists(features_path) or not os.path.exists(mapping_path):
         raise FileNotFoundError("请先运行 process_dict_features.py 生成预处理特征！")
     
+    # 根据任务选择训练轮数和数据路径
+    EPOCHS = POSITION_EPOCHS if args.stage == 'position' else TYPE_EPOCHS
+    train_file = os.path.join(DATA_DIR, f'4_train_{args.stage}_no_bug.csv')
+    val_file = os.path.join(DATA_DIR, f'4_val_{args.stage}_no_bug.csv')
+    
     # 加载典故词典和类型映射
     allusion_dict, type_label2id, id2type_label, num_types = load_allusion_dict()
     dict_size = len(allusion_dict)
@@ -551,134 +541,101 @@ def main():
     # 初始化tokenizer
     tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_PATH)
     
-    # 初始化模型
-    model = AllusionBERTCRF(BERT_MODEL_PATH, num_types, dict_size).to(device)
-    
-    # 检查是否有已存在的模型文件
-    position_checkpoint_path = os.path.join(SAVE_DIR, 'best_model_position.pt')
-    type_checkpoint_path = os.path.join(SAVE_DIR, 'best_model_type.pt')
-    
-    # 如果有已存在的模型文件，加载最新的参数
-    if os.path.exists(position_checkpoint_path):
-        print("\nFound existing position model checkpoint")
-        checkpoint = torch.load(position_checkpoint_path)
+    if args.stage == 'position':
+        print("Starting Stage 1: Position Recognition")
+        print(f"Training for {EPOCHS} epochs")
+        print(f"Using training data: {train_file}")
+        print(f"Using validation data: {val_file}")
+        
+        model = AllusionBERTCRF(BERT_MODEL_PATH, num_types, dict_size).to(device)
+        
+        train_dataset = PoetryNERDataset(
+            train_file, tokenizer, MAX_SEQ_LEN,
+            type_label2id=type_label2id,
+            id2type_label=id2type_label,
+            task='position',
+            features_path=features_path,
+            mapping_path=mapping_path
+        )
+        val_dataset = PoetryNERDataset(
+            val_file, tokenizer, MAX_SEQ_LEN,
+            type_label2id=type_label2id,
+            id2type_label=id2type_label,
+            task='position',
+            features_path=features_path,
+            mapping_path=mapping_path
+        )
+        
+    else:  # args.stage == 'type'
+        print("Starting Stage 2: Type Classification")
+        print(f"Training for {EPOCHS} epochs")
+        print(f"Using training data: {train_file}")
+        print(f"Using validation data: {val_file}")
+        
+        model = AllusionBERTCRF(BERT_MODEL_PATH, num_types, dict_size).to(device)
+        
+        # 加载模型参数
+        checkpoint_path = os.path.join(SAVE_DIR, f'best_model_position.pt')
+        if not os.path.exists(checkpoint_path):
+            raise FileNotFoundError("Please complete Stage 1 (position) training first!")
+            
+        # 直接加载所有参数
+        checkpoint = torch.load(checkpoint_path)
         model.load_state_dict(checkpoint['model_state_dict'])
-        print(f"Loaded position model from epoch {checkpoint['epoch']}")
-        start_epoch = checkpoint['epoch'] + 1
-    else:
-        print("\nNo existing model checkpoint found, starting from scratch")
-        start_epoch = 0
-    
-    # 创建两种任务的训练和验证数据集
-    position_train_dataset = PoetryNERDataset(
-        os.path.join(DATA_DIR, '4_train_position_no_bug.csv'),
-        tokenizer, MAX_SEQ_LEN,
-        type_label2id=type_label2id,
-        id2type_label=id2type_label,
-        task='position',
-        features_path=features_path,
-        mapping_path=mapping_path
-    )
-    
-    position_val_dataset = PoetryNERDataset(
-        os.path.join(DATA_DIR, '4_val_position_no_bug.csv'),
-        tokenizer, MAX_SEQ_LEN,
-        type_label2id=type_label2id,
-        id2type_label=id2type_label,
-        task='position',
-        features_path=features_path,
-        mapping_path=mapping_path
-    )
-    
-    type_train_dataset = PoetryNERDataset(
-        os.path.join(DATA_DIR, '4_train_type_no_bug.csv'),
-        tokenizer, MAX_SEQ_LEN,
-        type_label2id=type_label2id,
-        id2type_label=id2type_label,
-        task='type',
-        features_path=features_path,
-        mapping_path=mapping_path
-    )
-    
-    type_val_dataset = PoetryNERDataset(
-        os.path.join(DATA_DIR, '4_val_type_no_bug.csv'),
-        tokenizer, MAX_SEQ_LEN,
-        type_label2id=type_label2id,
-        id2type_label=id2type_label,
-        task='type',
-        features_path=features_path,
-        mapping_path=mapping_path
-    )
+        # 冻结共享参数
+        model.freeze_shared_parameters()
+        # 验证参数冻结状态
+        model.verify_frozen_parameters()
+        print("Loaded all parameters from Stage 1 model")
+        print("Shared parameters (BERT and BiLSTM) have been frozen")
+        
+        train_dataset = PoetryNERDataset(
+            train_file, tokenizer, MAX_SEQ_LEN,
+            type_label2id=type_label2id,
+            id2type_label=id2type_label,
+            task='type',
+            features_path=features_path,
+            mapping_path=mapping_path
+        )
+        val_dataset = PoetryNERDataset(
+            val_file, tokenizer, MAX_SEQ_LEN,
+            type_label2id=type_label2id,
+            id2type_label=id2type_label,
+            task='type',
+            features_path=features_path,
+            mapping_path=mapping_path
+        )
     
     # 创建数据加载器
-    position_train_dataloader = DataLoader(
-        position_train_dataset, 
-        batch_size=BATCH_SIZE,
+    train_dataloader = DataLoader(
+        train_dataset, 
+        batch_size=BATCH_SIZE, 
         shuffle=True,
-        collate_fn=position_train_dataset.collate_fn
+        collate_fn=train_dataset.collate_fn
+    )
+
+    val_dataloader = DataLoader(
+        val_dataset, 
+        batch_size=BATCH_SIZE, 
+        shuffle=False,
+        collate_fn=val_dataset.collate_fn
     )
     
-    position_val_dataloader = DataLoader(
-        position_val_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=False,  # 验证集不需要打乱
-        collate_fn=position_val_dataset.collate_fn
+    # 使用新的优化器和调度器
+    optimizer, scheduler = get_optimizer_and_scheduler(
+        model, 
+        train_dataloader,
+        EPOCHS,
+        task='type',  # 指定任务类型
+        warmup_ratio=0.1,
+        initial_lr=2e-5
     )
     
-    type_train_dataloader = DataLoader(
-        type_train_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=True,
-        collate_fn=type_train_dataset.collate_fn
+    # 训练模型
+    train_model(
+        model, train_dataloader, val_dataloader, optimizer, scheduler,
+        device, EPOCHS, SAVE_DIR, args.stage, id2type_label
     )
-    
-    type_val_dataloader = DataLoader(
-        type_val_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=False,  # 验证集不需要打乱
-        collate_fn=type_val_dataset.collate_fn
-    )
-    
-    # 交替训练
-    total_epochs = 30  # 总训练轮数
-    epochs_per_switch = 2  # 每次切换任务前训练的轮数
-    
-    for epoch in range(start_epoch, total_epochs):
-        current_task = 'position' if (epoch // epochs_per_switch) % 2 == 0 else 'type'
-        current_train_dataloader = position_train_dataloader if current_task == 'position' else type_train_dataloader
-        current_val_dataloader = position_val_dataloader if current_task == 'position' else type_val_dataloader
-        
-        # 获取针对当前任务的优化器和调度器
-        optimizer, scheduler = get_optimizer_and_scheduler(
-            model, current_train_dataloader, epochs_per_switch, 
-            current_epoch=epoch, task=current_task
-        )
-        
-        print(f"\nEpoch {epoch+1}/{total_epochs}, Training {current_task} task")
-        
-        # 训练当前任务
-        train_model(
-            model=model,
-            train_dataloader=current_train_dataloader,
-            val_dataloader=current_val_dataloader,
-            optimizer=optimizer,
-            scheduler=scheduler,
-            device=device,
-            num_epochs=1,
-            save_dir=SAVE_DIR,
-            task=current_task,
-            id2type_label=id2type_label
-        )
-        
-        # 每个epoch结束后保存检查点
-        checkpoint = {
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
-            'task': current_task,
-        }
-        torch.save(checkpoint, os.path.join(SAVE_DIR, f'latest_model_{current_task}.pt'))
 
 def test():
     """测试训练相关功能"""
