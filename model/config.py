@@ -21,8 +21,9 @@ OPTIMAL_EPS = 0.3824829931972789
 
 # 路径配置
 DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
-SAVE_DIR = os.path.join(PROJECT_ROOT, 'output_strictly')
+# SAVE_DIR = os.path.join(PROJECT_ROOT, 'output_strictly')
 # SAVE_DIR = os.path.join(PROJECT_ROOT, 'output_train_together')
+SAVE_DIR = os.path.join(PROJECT_ROOT, 'output_jointly_train')
 TEST_PATH = os.path.join(DATA_DIR, '4_val_position_no_bug.csv')
 
 # ALLUSION_DICT_PATH = os.path.join(DATA_DIR, 'updated_典故的异性数据.csv')

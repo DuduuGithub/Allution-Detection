@@ -14,9 +14,22 @@ import torch.nn.functional as F
 class AllusionBERTCRF(nn.Module):
     
     #num_types: 类型数量 需要在使用时通过建立allution_types.txt的映射关系的同时获得
-    def __init__(self, bert_path, num_types, dict_size, pos_weight=150):
-        super(AllusionBERTCRF, self).__init__()
-        self.pos_weight = pos_weight  # 添加权重参数
+    def __init__(self, bert_path, num_types, dict_size, bi_label_weight=0.6):
+        """
+        Args:
+            bert_path: BERT模型路径
+            num_types: 典故类型数量
+            dict_size: 典故词典大小
+            bi_label_weight: B/I标签的权重（相对于O标签）
+        """
+        super().__init__()
+        # B/I标签的权重（用于位置识别任务）
+        self.bi_label_weight = nn.Parameter(torch.tensor(bi_label_weight))
+        
+        # 联合训练的权重参数（用于联合损失计算）
+        self.position_weight = nn.Parameter(torch.tensor(0.5))
+        self.register_parameter('position_weight', self.position_weight)
+        
         # BERT基础模型
         self.bert = BertModel.from_pretrained(bert_path)
         self.bert_hidden_size = self.bert.config.hidden_size
@@ -89,6 +102,16 @@ class AllusionBERTCRF(nn.Module):
             nn.Tanh(),
             nn.Linear(256, 1)
         )
+        
+        '''
+            注意力层的作用：
+            如对于[塞翁失马]
+                塞: 0.3
+                翁: 0.2
+                失: 0.4
+                马: 0.1
+            将权重与原始特征相乘并求和
+        '''
         
         # 类别识别模块
         self.type_classifier = nn.Linear(self.lstm_hidden_size * 2, num_types)
@@ -183,8 +206,9 @@ class AllusionBERTCRF(nn.Module):
         
         # 创建权重矩阵
         weights = torch.ones_like(labels, dtype=torch.float)
-        # 将典故位置(B/I)的权重设置为pos_weight
-        weights = torch.where(labels > 0, torch.tensor(self.pos_weight, device=labels.device), weights)
+        weights = torch.where(labels > 0, 
+                             torch.tensor(self.bi_label_weight, device=labels.device),
+                             torch.tensor(1 - self.bi_label_weight, device=labels.device))
         
         # 计算基础CRF损失
         base_loss = -self.position_crf(
@@ -193,16 +217,6 @@ class AllusionBERTCRF(nn.Module):
             mask=mask,
             reduction='none'
         )
-        
-        # 打印调试信息（确保只看mask内的有效标签）
-        # masked_labels = labels[mask]
-        # masked_weights = weights[mask]
-        # print("Labels distribution in loss:", torch.bincount(masked_labels))
-        # print("Original weights values:", torch.unique(masked_weights))
-        # print("Number of O labels:", (masked_labels == 0).sum().item())
-        # print("Number of B labels:", (masked_labels == 1).sum().item())
-        # print("Number of I labels:", (masked_labels == 2).sum().item())
-        # print("Number of weighted positions:", (masked_weights == pos_weight).sum().item())
         
         weighted_loss = base_loss * weights.mean(dim=1)
         return weighted_loss.mean()
@@ -273,18 +287,25 @@ class AllusionBERTCRF(nn.Module):
         
         return focal_loss.mean()
 
-    def forward(self, input_ids, attention_mask, dict_features, task='position', 
-                position_labels=None, type_labels=None, target_positions=None):
+    def forward(self, input_ids, attention_mask, dict_features,
+                position_labels=None, type_labels=None, target_positions=None,train_mode=True,task='position'):
         """
-        前向传播
+        联合训练前向传播
         Args:
             input_ids: 输入的token ids
             attention_mask: 注意力掩码 已考虑[CLS]和[SEP]
             dict_features: 稀疏特征字典
-            task: 'position' 或 'type'，指定当前任务
             position_labels: 位置标签 (B/I/O)    已考虑[CLS]和[SEP]
-            type_labels: 类型标签    已考虑[CLS]和[SEP]
-            target_positions: 待判断词的位置索引 [batch_size, 2] (start, end) 已考虑[CLS]和[SEP]
+            type_labels:[batch_size, max_type_len] 类型标签    已考虑[CLS]和[SEP]
+            target_positions: 待判断词的位置索引 [batch_size, max_type_len,2]  已考虑[CLS]和[SEP]
+        
+        预测模式return:
+        'position_labels': [0, 1, 2, 0, ...],  # 整句话的位置标签预测
+        'type_predictions': [
+            (start1, end1, [(type_id1, prob1), (type_id2, prob2), ...]),  # 第一个典故
+            (start2, end2, [(type_id1, prob1), (type_id2, prob2), ...]),  # 第二个典故
+            ...
+        ]
         """
         # 1. BERT编码
         outputs = self.bert(input_ids, attention_mask=attention_mask)
@@ -299,127 +320,160 @@ class AllusionBERTCRF(nn.Module):
         # 4. BiLSTM处理
         lstm_output, _ = self.bilstm(combined_features)
         
-        if task == 'position':
-            # 位置识别 (B/I/O)
-            position_emissions = self.position_classifier(lstm_output)
-            
-            if position_labels is not None:
-                # 训练模式
-                batch_size, seq_len = position_labels.shape  # 使用position_labels的形状
-                mask = torch.ones((batch_size, seq_len), dtype=torch.bool, device=position_emissions.device)
-                
-                # 根据attention_mask设置实际长度
-                for i in range(batch_size):
-                    valid_len = attention_mask[i].sum().item()
-                    mask[i, valid_len:] = False
-                
-                
-                # 使用带权重的损失
-                loss = self.weighted_crf_loss(
-                    position_emissions,
-                    position_labels,
-                    mask=mask
-                )
-                return loss
-            
-            else:
-                # 预测模式 - 添加dummy样本
-                batch_size, seq_len = position_emissions.shape[:2]
-                dummy_emission = position_emissions[0:1].clone()
-                position_emissions = torch.cat([dummy_emission, position_emissions], dim=0)
-                
-                # 创建包含dummy样本的mask
-                mask = torch.ones((batch_size + 1, seq_len), dtype=torch.bool, device=position_emissions.device)
-                mask[0] = True  # dummy样本的mask全为True
-                
-                # print('attention_mask:', attention_mask)
-                
-                # 为实际样本设置mask
-                for i in range(batch_size):
-                    valid_len = attention_mask[i].sum().item()
-                    # print('valid_len:', valid_len)
-                    mask[i+1, valid_len:] = False
-                
-                # print('mask:', mask)
-
-                # 预测
-                prediction = self.position_crf.decode(
-                    position_emissions,
-                    mask=mask
-                )
-                
-                # 去掉dummy样本并确保所有序列长度一致
-                predictions = []
-                for pred in prediction[1:]:  # 跳过dummy样本
-                    # 如果预测长度小于seq_len，补充到完整长度
-                    if len(pred) < seq_len:
-                        pred = pred + [0] * (seq_len - len(pred))
-                    predictions.append(pred[1:-1])  # 去掉[CLS]和[SEP]
-                
-                # print('Prediction in forward:', predictions)
-                return predictions
+        # 5. 位置识别任务
+        position_emissions = self.position_classifier(lstm_output)
+        position_preds = self.position_crf.decode(position_emissions, mask=attention_mask.bool())
         
-        elif task == 'type':
-            # 使用批处理版本的注意力池化
-            batch_size = input_ids.size(0)
-            start_positions = target_positions[:, 0]
-            end_positions = target_positions[:, 1]
-            target_features = self.batch_attention_pooling(
-                lstm_output, start_positions, end_positions
-            )
+        # 训练模式
+        # 训练模式的返回
+        if train_mode == True:
+            # 使用 attention_mask 作为损失计算的掩码
+            mask = attention_mask.bool()  # [batch_size, seq_len]
             
-            # 类型分类
-            type_logits = self.type_classifier(target_features)  # [batch_size, num_types]
+            # 计算位置识别损失
+            position_loss = self.weighted_crf_loss(position_emissions, position_labels, mask)
             
-            if type_labels is not None:
-                # 训练模式：使用改进的损失函数
-                # 将 type_labels 从 [batch_size, 1] 转换为 [batch_size]
-                type_labels = type_labels.squeeze(1)
-                loss = self.type_classification_loss(type_logits, type_labels)
-                return loss
-            else:
-                # 预测模式：返回 top-5 预测结果和概率
-                probs = F.softmax(type_logits, dim=-1)
-                top5_probs, top5_indices = torch.topk(probs, k=5, dim=-1)
+            # # 检查position loss是否过大
+            # POSITION_LOSS_THRESHOLD = 50.0
+            # if position_loss > POSITION_LOSS_THRESHOLD:
+            #     print("\n" + "="*50)
+            #     print("High Position Loss Detected!")
+            #     print(f"Position Loss: {position_loss.item():.4f}")
+                
+            #     # 获取预测结果
+            #     position_preds = self.position_crf.decode(position_emissions, mask=mask)
+                
+            #     # 获取batch中每个样本的详细信息
+            #     batch_size = input_ids.size(0)
+            #     for i in range(batch_size):
+            #         print(f"\nSample {i + 1}:")
+            #         # 使用已创建的tokenizer解码文本
+            #         tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_PATH)
+            #         tokens = tokenizer.convert_ids_to_tokens(input_ids[i])
+            #         text = tokenizer.convert_tokens_to_string(tokens)
+            #         print(f"Text: {text}")
+            #         print(f"Attention Mask: {attention_mask[i]}")
+            #         print(f"True Position Labels: {position_labels[i]}")
+            #         print(f"Predicted Labels: {position_preds[i]}")                
+            #     print("="*50)
+            
+            # 计算类型识别损失
+            type_losses = []
+            if len(target_positions) > 0:  # 如果有典故
+                batch_size = type_labels.size(0)
+                max_type_len = type_labels.size(1)
+                
+                for batch_idx in range(batch_size):
+                    for type_idx in range(max_type_len):
+                        if target_positions[batch_idx][type_idx].sum() > 0:  # 跳过填充的位置
+                            # print('target_positions in forward:',target_positions[batch_idx][type_idx])
+                            start = target_positions[batch_idx][type_idx][0].item()
+                            end = target_positions[batch_idx][type_idx][1].item()
+                            
+                            target_features = self.attention_pooling(
+                                lstm_output[batch_idx:batch_idx+1, start:end+1, :]
+                            )
+                            type_logits = self.type_classifier(target_features)
+                            
+                            type_loss = self.type_classification_loss(
+                                type_logits,
+                                type_labels[batch_idx][type_idx].unsqueeze(0)
+                            )
+                            type_losses.append(type_loss)
+            
+            # 计算平均类型识别损失
+            type_loss = torch.mean(torch.stack(type_losses))
+            
+            # 使用动态权重计算联合损失
+            joint_loss = (self.position_weight * position_loss + 
+                            (1 - self.position_weight) * type_loss)
+        
+        
+            return {
+                'loss': joint_loss,
+                'position_loss': position_loss.item(),
+                'type_loss': type_loss.item(),
+                'joint_loss': joint_loss,
+                'position_weight': self.position_weight.item(),
+                'type_weight': (1 - self.position_weight).item()
+            }
+        elif train_mode == False:
+            # 预测模式
+            # 1. 位置识别任务
+            if task == 'position':  
+                position_emissions = self.position_classifier(lstm_output)
+                position_preds = self.position_crf.decode(position_emissions, mask=attention_mask.bool())
+
+                # 去除CLS和SEP标记，并只保留实际文本长度
+                position_preds_cleaned = []
+                for pred, mask in zip(position_preds, attention_mask):
+                    # 计算实际序列长度（减去CLS和SEP）
+                    seq_len = mask.sum().item() - 2  # -2 for CLS and SEP
+                    # 只保留实际文本部分（去除CLS、SEP和padding）
+                    position_preds_cleaned.append(pred[1:seq_len+1])
                 return {
-                    'predictions': top5_indices,
-                    'probabilities': top5_probs
+                    'position_predictions': position_preds_cleaned
+                }
+            elif task == 'type':    
+                # 2. 类型识别任务
+                type_predictions = []
+                if len(target_positions) > 0:  # 如果有典故
+                    batch_size = type_labels.size(0)
+                    max_type_len = type_labels.size(1)
+                    
+                    # 获取原始文本
+                    tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_PATH)
+                    for batch_idx in range(batch_size):
+                        # # 解码当前样本的文本，保留特殊标记以便确认位置
+                        # tokens = tokenizer.convert_ids_to_tokens(input_ids[batch_idx])
+                        # # 去除CLS和SEP后的文本
+                        # text = tokenizer.convert_tokens_to_string(tokens[1:-1])
+                        # print("\n" + "="*50)
+                        # print(f"Sample {batch_idx + 1}:")
+                        # print(f"Text: {text}")
+                        
+                        for type_idx in range(max_type_len):
+                            if target_positions[batch_idx][type_idx].sum() > 0:  # 跳过填充的位置
+                                start = target_positions[batch_idx][type_idx][0].item()
+                                end = target_positions[batch_idx][type_idx][1].item()
+                                
+                                # # 打印目标位置和对应的类型标签
+                                # print(f"\nTarget Position: ({start}, {end})")
+                                # # 使用原始tokens获取目标文本，注意start和end已经考虑了CLS
+                                # target_text = tokenizer.convert_tokens_to_string(tokens[start:end+1])
+                                # print(f"Target Text: {target_text}")
+                                # print(f"Type Label: {type_labels[batch_idx][type_idx].item()}")
+                                
+                                target_features = self.attention_pooling(
+                                    lstm_output[batch_idx:batch_idx+1, start:end+1, :]
+                                )
+                                type_logits = self.type_classifier(target_features)
+                                
+                                # 计算概率
+                                type_probs = F.softmax(type_logits, dim=-1)
+                                
+                                # 获取top5
+                                top5_probs, top5_indices = torch.topk(type_probs, k=min(5, type_probs.size(-1)))
+                                
+                                # 将预测结果和概率组合
+                                all_position_types = []
+                                for row_indices, row_probs in zip(top5_indices, top5_probs):
+                                    position_types = []
+                                    for idx, prob in zip(row_indices, row_probs):
+                                        position_types.append((idx.item(), prob.item()))
+                                    all_position_types.append(position_types)
+                                    
+                                type_predictions.append((start-1, end-1, all_position_types[0]))  # -1 因为[CLS]
+                                # 打印预测结果
+                                # print("\nPredictions:")
+                                # for type_id, prob in all_position_types[0]:
+                                #     print(f"Type ID: {type_id}, Probability: {prob:.4f}")
+                                # print("="*50)
+
+                return {
+                    'type_predictions': type_predictions
                 }
 
-    def freeze_shared_parameters(self):
-        """冻结共享参数（BERT和BiLSTM层）"""
-        # 冻结BERT
-        for param in self.bert.parameters():
-            param.requires_grad = False
-        
-        # 冻结BiLSTM
-        for param in self.bilstm.parameters():
-            param.requires_grad = False
-        
-        # 冻结字典特征相关层
-        for param in self.dict_embedding.parameters():
-            param.requires_grad = False
-        for param in self.dict_transform.parameters():
-            param.requires_grad = False
-
-    def verify_frozen_parameters(self):
-        """验证共享参数是否被正确冻结"""
-        for name, param in self.named_parameters():
-            if any(layer in name for layer in ['bert', 'bilstm', 'dict_embedding', 'dict_transform']):
-                if param.requires_grad:
-                    print(f"Warning: {name} should be frozen but is not!")
-            elif any(layer in name for layer in ['type_classifier', 'attention']):
-                if not param.requires_grad:
-                    print(f"Warning: {name} should be trainable but is frozen!")
-
-    def adjust_shared_learning_rate(self, epoch, base_lr):
-        """根据训练轮数调整共享参数的学习率"""
-        # 前10个epoch保持较大学习率以快速学习
-        if epoch < 10:
-            return base_lr
-        # 之后逐渐降低学习率
-        else:
-            return base_lr * 0.1
 
 def prepare_sparse_features(batch_texts, allusion_dict, max_active=5):
     """将文本批量转换为稀疏特征格式"""
