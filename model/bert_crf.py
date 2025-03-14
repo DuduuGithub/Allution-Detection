@@ -177,7 +177,7 @@ class AllusionBERTCRF(nn.Module):
         
         return transformed_features
 
-    def attention_pooling(self, hidden_states):
+    def attention_pooling(self, hidden_states,start,end):
         """
         注意力池化层
         Args:
@@ -185,14 +185,13 @@ class AllusionBERTCRF(nn.Module):
         Returns:
             pooled_features: [hidden_size*2]
         """
-        # 计算注意力分数
-        attention_weights = self.attention(hidden_states)  # [span_length, 1]
-        attention_weights = torch.softmax(attention_weights, dim=0)  # [span_length, 1]
         
-        # 加权求和
-        weighted_sum = torch.sum(hidden_states * attention_weights, dim=0)  # [hidden_size*2]
         
-        return weighted_sum
+        span = hidden_states[start:end]  # 选取当前样本的跨度
+        attention_weights = self.attention(span)  # [span_length, 1]
+        attention_weights = torch.softmax(attention_weights, dim=0)  # 归一化注意力权重
+        pooled_feature = torch.sum(span * attention_weights, dim=0)  # 加权求和        
+        return pooled_feature
 
     def weighted_crf_loss(self, emissions, labels, mask):
         """
@@ -221,54 +220,13 @@ class AllusionBERTCRF(nn.Module):
         weighted_loss = base_loss * weights.mean(dim=1)
         return weighted_loss.mean()
 
-    def batch_attention_pooling(self, hidden_states, start_positions, end_positions):
-        """
-        批量注意力池化层
-        Args:
-            hidden_states: [batch_size, seq_len, hidden_size*2]
-            start_positions: [batch_size]
-            end_positions: [batch_size]
-        Returns:
-            pooled_features: [batch_size, hidden_size*2]
-        """
-        batch_size = hidden_states.size(0)
-        max_span_length = (end_positions - start_positions + 1).max()
-        
-        # 创建批处理掩码
-        span_masks = torch.arange(max_span_length, device=hidden_states.device)[None, :] < \
-                    (end_positions - start_positions + 1)[:, None]  # [batch_size, max_span_length]
-        
-        # 收集所有跨度的特征
-        batch_spans = []
-        for i in range(batch_size):
-            span = hidden_states[i, start_positions[i]:end_positions[i]+1]
-            # 填充到最大长度
-            if span.size(0) < max_span_length:
-                padding = torch.zeros(max_span_length - span.size(0), span.size(1), 
-                                    device=span.device)
-                span = torch.cat([span, padding], dim=0)
-            batch_spans.append(span)
-        
-        batch_spans = torch.stack(batch_spans)  # [batch_size, max_span_length, hidden_size*2]
-        
-        # 计算注意力分数
-        attention_weights = self.attention(batch_spans)  # [batch_size, max_span_length, 1]
-        
-        # 应用掩码
-        attention_weights = attention_weights.masked_fill(~span_masks.unsqueeze(-1), float('-inf'))
-        attention_weights = torch.softmax(attention_weights, dim=1)  # [batch_size, max_span_length, 1]
-        
-        # 加权求和
-        weighted_sum = torch.sum(batch_spans * attention_weights, dim=1)  # [batch_size, hidden_size*2]
-        
-        return weighted_sum
 
     def type_classification_loss(self, logits, labels, label_smoothing=0.1, gamma=2.0):
         """
         改进的类型分类损失函数
         Args:
-            logits: [batch_size, num_types]
-            labels: [batch_size]
+            logits: [batch_type_nums, num_types]
+            labels: [batch_type_nums]
             label_smoothing: 标签平滑参数
             gamma: 焦点损失参数
         """
@@ -358,37 +316,39 @@ class AllusionBERTCRF(nn.Module):
             #     print("="*50)
             
             # 计算类型识别损失
-            type_losses = []
-            if len(target_positions) > 0:  # 如果有典故
-                batch_size = type_labels.size(0)
-                max_type_len = type_labels.size(1)
-                
-                for batch_idx in range(batch_size):
-                    for type_idx in range(max_type_len):
-                        if target_positions[batch_idx][type_idx].sum() > 0:  # 跳过填充的位置
-                            # print('target_positions in forward:',target_positions[batch_idx][type_idx])
-                            start = target_positions[batch_idx][type_idx][0].item()
-                            end = target_positions[batch_idx][type_idx][1].item()
-                            
-                            target_features = self.attention_pooling(
-                                lstm_output[batch_idx:batch_idx+1, start:end+1, :]
-                            )
-                            type_logits = self.type_classifier(target_features)
-                            
-                            type_loss = self.type_classification_loss(
-                                type_logits,
-                                type_labels[batch_idx][type_idx].unsqueeze(0)
-                            )
-                            type_losses.append(type_loss)
+            batch_size = type_labels.size(0)
+            max_type_len = type_labels.size(1)
             
-            # 计算平均类型识别损失
-            type_loss = torch.mean(torch.stack(type_losses))
+            batch_type_preds = []
+            batch_type_labels = []
+            for batch_idx in range(batch_size):
+                for type_idx in range(max_type_len):
+                    if target_positions[batch_idx][type_idx].sum() > 0:  # 跳过填充的位置
+                        # print('target_positions in forward:',target_positions[batch_idx][type_idx])
+                        start = target_positions[batch_idx][type_idx][0].item()
+                        end = target_positions[batch_idx][type_idx][1].item()
+                        
+                        pooled_features = self.attention_pooling(               #shape:[hidden_size * 2]
+                            lstm_output[batch_idx],start,end
+                        )
+                        
+                        type_logits = self.type_classifier(pooled_features)     #shape:[num_types]
+                        batch_type_preds.append(type_logits)
+                        batch_type_labels.append(type_labels[batch_idx][type_idx])
+            # 将列表转换为张量
+            batch_type_preds = torch.stack(batch_type_preds)    #shape:[batch_type_nums,num_types]
+            batch_type_labels = torch.tensor(batch_type_labels, device=batch_type_preds.device)  # [num_samples]
+            
+            # print('batch_type_preds:',batch_type_preds)
+            # print('batch_type_labels:',batch_type_labels)
+            type_loss = self.type_classification_loss(
+                batch_type_preds,
+                batch_type_labels
+            )
             
             # 使用动态权重计算联合损失
             joint_loss = (self.position_weight * position_loss + 
-                            (1 - self.position_weight) * type_loss)
-        
-        
+                          (1 - self.position_weight) * type_loss)
             return {
                 'loss': joint_loss,
                 'position_loss': position_loss.item(),
@@ -424,30 +384,16 @@ class AllusionBERTCRF(nn.Module):
                     # 获取原始文本
                     tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_PATH)
                     for batch_idx in range(batch_size):
-                        # # 解码当前样本的文本，保留特殊标记以便确认位置
-                        # tokens = tokenizer.convert_ids_to_tokens(input_ids[batch_idx])
-                        # # 去除CLS和SEP后的文本
-                        # text = tokenizer.convert_tokens_to_string(tokens[1:-1])
-                        # print("\n" + "="*50)
-                        # print(f"Sample {batch_idx + 1}:")
-                        # print(f"Text: {text}")
-                        
                         for type_idx in range(max_type_len):
                             if target_positions[batch_idx][type_idx].sum() > 0:  # 跳过填充的位置
                                 start = target_positions[batch_idx][type_idx][0].item()
                                 end = target_positions[batch_idx][type_idx][1].item()
                                 
-                                # # 打印目标位置和对应的类型标签
-                                # print(f"\nTarget Position: ({start}, {end})")
-                                # # 使用原始tokens获取目标文本，注意start和end已经考虑了CLS
-                                # target_text = tokenizer.convert_tokens_to_string(tokens[start:end+1])
-                                # print(f"Target Text: {target_text}")
-                                # print(f"Type Label: {type_labels[batch_idx][type_idx].item()}")
-                                
-                                target_features = self.attention_pooling(
-                                    lstm_output[batch_idx:batch_idx+1, start:end+1, :]
+                                pooled_features = self.attention_pooling(               #shape:[hidden_size * 2]
+                                    lstm_output[batch_idx],start,end
                                 )
-                                type_logits = self.type_classifier(target_features)
+                                
+                                type_logits = self.type_classifier(pooled_features)     #shape:[num_types]
                                 
                                 # 计算概率
                                 type_probs = F.softmax(type_logits, dim=-1)
@@ -455,20 +401,14 @@ class AllusionBERTCRF(nn.Module):
                                 # 获取top5
                                 top5_probs, top5_indices = torch.topk(type_probs, k=min(5, type_probs.size(-1)))
                                 
+                                
                                 # 将预测结果和概率组合
                                 all_position_types = []
-                                for row_indices, row_probs in zip(top5_indices, top5_probs):
-                                    position_types = []
-                                    for idx, prob in zip(row_indices, row_probs):
-                                        position_types.append((idx.item(), prob.item()))
-                                    all_position_types.append(position_types)
+                                for indice, prob in zip(top5_indices, top5_probs):
+                                    all_position_types.append((indice.item(), prob.item()))  # 使用 .item() 提取值
                                     
-                                type_predictions.append((start-1, end-1, all_position_types[0]))  # -1 因为[CLS]
-                                # 打印预测结果
-                                # print("\nPredictions:")
-                                # for type_id, prob in all_position_types[0]:
-                                #     print(f"Type ID: {type_id}, Probability: {prob:.4f}")
-                                # print("="*50)
+                                type_predictions.append((start-1, end-1, all_position_types))  # -1 因为[CLS]
+
 
                 return {
                     'type_predictions': type_predictions

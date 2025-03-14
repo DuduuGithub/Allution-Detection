@@ -303,7 +303,7 @@ def evaluate_metrics_from_outputs(outputs, labels):
 
 
     
-def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler, 
+def val_model(model, train_dataloader, val_dataloader, optimizer, scheduler, 
                 device, num_epochs, save_dir, position_weight=0.6,
                 id2type_label=None):
     """
@@ -322,7 +322,7 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
         id2type_label: 类型标签id到名称的映射字典
     """
     # 创建日志文件
-    log_file = os.path.join(save_dir, f'training_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
+    log_file = os.path.join(save_dir, f'valing_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
     best_val_loss = float('inf')
     
     def log_message(message):
@@ -338,257 +338,144 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
     # 设置联合训练的权重
     model.position_weight.data = torch.tensor(position_weight, device=device)
     
-    # 初始化早停机制相关变量
-    best_weighted_score = -1  # 最佳加权得分
-    patience = 4  # 最大耐心值
-    patience_counter = 0  # 耐心计数器
-    early_stop = False  # 是否触发早停
+
+        
+    # 验证阶段
+    model.eval()
+    total_val_loss = 0
+    total_val_position_loss = 0
+    total_val_type_loss = 0
     
-    for epoch in range(num_epochs):
-        # 可以根据需要动态调整权重
-        if epoch <= 2:
-            model.position_weight.data = torch.tensor(0.6, device=device)
-        elif epoch <= 4:
-            model.position_weight.data = torch.tensor(0.3, device=device)
-        elif epoch <= 6:
-            model.position_weight.data = torch.tensor(0.2, device=device)
-        elif epoch <= 8:
-            model.position_weight.data = torch.tensor(0.18, device=device)
-        else:
-            model.position_weight.data = torch.tensor(0.16, device=device)
-            
-        log_message(f"Epoch {epoch+1}/{num_epochs}")
-        log_message(f"Position Weight (Joint Loss): {model.position_weight.item():.4f}")
-        log_message(f"B/I Label Weight: {model.bi_label_weight.item():.4f}")
-        
-        # 训练阶段
-        model.train()
-        total_train_loss = 0
-        total_train_position_loss = 0
-        total_train_type_loss = 0
-        
-        for batch_idx, batch in enumerate(train_dataloader):
-            # 准备数据
+    # 收集验证数据用于评估
+    all_val_outputs = []
+    all_val_labels = []
+    
+    with torch.no_grad():
+        for batch in val_dataloader:
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
             position_labels = batch['position_labels'].to(device)
             target_positions = batch['target_positions'].to(device)
             type_labels = batch['type_labels'].to(device)
             
-            dict_features = {
-                'indices': batch['dict_features']['indices'].to(device),
-                'values': batch['dict_features']['values'].to(device),
-                'active_counts': batch['dict_features']['active_counts'].to(device)
-            }
-            # 在打印前临时设置
-            # print('text:',batch['text'])
-            # print("Position labels:")
-            # print(batch['position_labels'])
-            # print("\nTarget positions:")
-            # print(batch['target_positions'])
-            # print("\nType labels:")
-            # print(batch['type_labels'])
+            dict_features = {k: v.to(device) for k, v in batch['dict_features'].items()}
             
-            # 计算损失
-            outputs = model(
+            # 1. 计算损失（使用所有标签）
+            loss_outputs = model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 dict_features=dict_features,
                 position_labels=position_labels,
                 target_positions=target_positions,
                 type_labels=type_labels,
-                train_mode=True
+                train_mode=True #训练模式下才返回损失
             )
             
-            loss = outputs['loss']
-            
-            # 反向传播
-            optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            optimizer.step()
-            scheduler.step()
-            
             # 累计损失
-            total_train_loss += loss.item()
-            total_train_position_loss += outputs['position_loss']
-            total_train_type_loss += outputs['type_loss']
+            total_val_loss += loss_outputs['loss'].item()
+            total_val_position_loss += loss_outputs['position_loss']
+            total_val_type_loss += loss_outputs['type_loss']
             
-            # 每100个batch输出一次进度
-            if (batch_idx + 1) % 100 == 0:
-                log_message(f'Epoch {epoch+1}/{num_epochs} - Batch {batch_idx+1}/{len(train_dataloader)}:')
-                log_message(f'  Position Loss: {outputs["position_loss"]:.4f}')
-                log_message(f'  Type Loss: {outputs["type_loss"]:.4f}')
-                log_message(f'  Total Loss: {loss.item():.4f}')
-                log_message(f'  Position Weight: {model.position_weight.item():.4f}')
-                log_message(f'  B/I Label Weight: {model.bi_label_weight.item():.4f}')
-        
-        # 计算平均训练损失
-        avg_train_loss = total_train_loss / len(train_dataloader)
-        avg_train_position_loss = total_train_position_loss / len(train_dataloader)
-        avg_train_type_loss = total_train_type_loss / len(train_dataloader)
-        
-        # 验证阶段
-        model.eval()
-        total_val_loss = 0
-        total_val_position_loss = 0
-        total_val_type_loss = 0
-        
-        # 收集验证数据用于评估
-        all_val_outputs = []
-        all_val_labels = []
-        
-        with torch.no_grad():
-            for batch in val_dataloader:
-                input_ids = batch['input_ids'].to(device)
-                attention_mask = batch['attention_mask'].to(device)
-                position_labels = batch['position_labels'].to(device)
-                target_positions = batch['target_positions'].to(device)
-                type_labels = batch['type_labels'].to(device)
-                
-                dict_features = {k: v.to(device) for k, v in batch['dict_features'].items()}
-                
-                # 1. 计算损失（使用所有标签）
-                loss_outputs = model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    dict_features=dict_features,
-                    position_labels=position_labels,
-                    target_positions=target_positions,
-                    type_labels=type_labels,
-                    train_mode=True #训练模式下才返回损失
-                )
-                
-                # 累计损失
-                total_val_loss += loss_outputs['loss'].item()
-                total_val_position_loss += loss_outputs['position_loss']
-                total_val_type_loss += loss_outputs['type_loss']
-                
-                # 2. 获取预测
-                position_pred_outputs = model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    dict_features=dict_features,
-                    target_positions=target_positions,
-                    type_labels=type_labels,
-                    train_mode=False,
-                    task='position'
-                )
-                type_pred_outputs = model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    dict_features=dict_features,
-                    target_positions=target_positions,
-                    type_labels=type_labels,
-                    train_mode=False,
-                    task='type'
-                )
-                
-                cleaned_type_labels = []
-                batch_size = type_labels.size(0)
-                max_type_len = type_labels.size(1)
-                # 清理type_labels
-                for batch_idx in range(batch_size):
-                    for type_idx in range(max_type_len):
-                        if target_positions[batch_idx][type_idx].sum() > 0:  # 跳过填充的位置
-                            cleaned_type_labels.append(type_labels[batch_idx][type_idx])
-                                
-                all_val_outputs.append({
-                    'position_predictions': position_pred_outputs['position_predictions'],
-                    'type_predictions': type_pred_outputs['type_predictions']
-                })
-                
-                all_val_labels.append({
-                    'position_labels': position_labels,
-                    'type_labels': cleaned_type_labels, # 清理后的标签 [batch_all_nums]
-                    'attention_mask': attention_mask
-                })
-        
-        # 计算平均验证损失
-        avg_val_loss = total_val_loss / len(val_dataloader)
-        avg_val_position_loss = total_val_position_loss / len(val_dataloader)
-        avg_val_type_loss = total_val_type_loss / len(val_dataloader)
-        
-        # 使用收集的数据计算评估指标
-        metrics = evaluate_metrics_from_outputs(all_val_outputs, all_val_labels)
-        
-        # 计算加权得分
-        weighted_score = calculate_weighted_score(metrics)
-        
-        # 保存最佳模型（基于加权得分）
-        if weighted_score >= best_weighted_score:
-            best_weighted_score = weighted_score
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss': avg_val_loss,
-                'weighted_score': best_weighted_score,
-            }, os.path.join(save_dir, 'best_model.pt'))
-            log_message(f'Saved new best model with weighted score: {best_weighted_score:.4f}')
-            patience_counter = 0  # 重置耐心计数器
-        else:
-            patience_counter += 1  # 增加耐心计数器
-        
-        # 记录每个epoch的训练信息
-        log_message(f'\nEpoch {epoch+1}/{num_epochs} Summary:')
-        log_message(f'Training Loss:')
-        log_message(f'  Position Loss: {avg_train_position_loss:.4f}')
-        log_message(f'  Type Loss: {avg_train_type_loss:.4f}')
-        log_message(f'  Total Loss: {avg_train_loss:.4f}')
-        log_message(f'Validation Loss:')
-        log_message(f'  Position Loss: {avg_val_position_loss:.4f}')
-        log_message(f'  Type Loss: {avg_val_type_loss:.4f}')
-        log_message(f'  Total Loss: {avg_val_loss:.4f}')
-        
-        # 记录评估指标
-        log_message(f'\nPerformance Metrics:')
-        log_message(f'Position Recognition:')
-        log_message(f'  Overall:')
-        log_message(f'    Precision: {metrics["position"]["precision"]:.4f}')
-        log_message(f'    Recall: {metrics["position"]["recall"]:.4f}')
-        log_message(f'    F1: {metrics["position"]["f1"]:.4f}')
-        
-        # 添加BIO标签的详细信息
-        log_message(f'  B Label:')
-        log_message(f'    Precision: {metrics["position"]["B"]["precision"]:.4f}')
-        log_message(f'    Recall: {metrics["position"]["B"]["recall"]:.4f}')
-        log_message(f'    F1: {metrics["position"]["B"]["f1"]:.4f}')
-        log_message(f'    TP: {metrics["position"]["B"]["tp"]}, FP: {metrics["position"]["B"]["fp"]}, FN: {metrics["position"]["B"]["fn"]}')
-        
-        log_message(f'  I Label:')
-        log_message(f'    Precision: {metrics["position"]["I"]["precision"]:.4f}')
-        log_message(f'    Recall: {metrics["position"]["I"]["recall"]:.4f}')
-        log_message(f'    F1: {metrics["position"]["I"]["f1"]:.4f}')
-        log_message(f'    TP: {metrics["position"]["I"]["tp"]}, FP: {metrics["position"]["I"]["fp"]}, FN: {metrics["position"]["I"]["fn"]}')
-        
-        log_message(f'  O Label:')
-        log_message(f'    Precision: {metrics["position"]["O"]["precision"]:.4f}')
-        log_message(f'    Recall: {metrics["position"]["O"]["recall"]:.4f}')
-        log_message(f'    F1: {metrics["position"]["O"]["f1"]:.4f}')
-        log_message(f'    TP: {metrics["position"]["O"]["tp"]}, FP: {metrics["position"]["O"]["fp"]}, FN: {metrics["position"]["O"]["fn"]}')
-        
-        log_message(f'Type Recognition:')
-        log_message(f'  Top-1 Accuracy: {metrics["type"]["top1_acc"]:.4f}')
-        log_message(f'  Top-3 Accuracy: {metrics["type"]["top3_acc"]:.4f}')
-        log_message(f'  Top-5 Accuracy: {metrics["type"]["top5_acc"]:.4f}')
-        log_message(f'  Mistake:')
-        log_message(f'    Positive to Negative: {metrics["type"]["mistake"]["positive_to_negative"]:.4f}')
-        log_message(f'    Negative to Positive: {metrics["type"]["mistake"]["negative_to_positive"]:.4f}')
-        log_message(f'raw_data:')
-        log_message(f'    Positive Correct: {metrics["type"]["raw_data"]["positive_correct"]}')
-        log_message(f'    Positive Total: {metrics["type"]["raw_data"]["positive_total"]}')
-        log_message(f'    Positive Top3 Correct: {metrics["type"]["raw_data"]["positive_top3_correct"]}')
-        log_message(f'    Positive Top5 Correct: {metrics["type"]["raw_data"]["positive_top5_correct"]}')
-        log_message(f'    Negative Total: {metrics["type"]["raw_data"]["negative_total"]}')
-        log_message(f'    Negative Correct: {metrics["type"]["raw_data"]["negative_correct"]}')
-        log_message('='*50)
-        
-        # 检查是否触发早停
-        if patience_counter >= patience:
-            early_stop = True
-            log_message(f'Early stopping triggered at epoch {epoch+1}. Best weighted score: {best_weighted_score:.4f}')
-            break
+            # 2. 获取预测
+            position_pred_outputs = model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                dict_features=dict_features,
+                target_positions=target_positions,
+                type_labels=type_labels,
+                train_mode=False,
+                task='position'
+            )
+            type_pred_outputs = model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                dict_features=dict_features,
+                target_positions=target_positions,
+                type_labels=type_labels,
+                train_mode=False,
+                task='type'
+            )
+            
+            cleaned_type_labels = []
+            batch_size = type_labels.size(0)
+            max_type_len = type_labels.size(1)
+            # 清理type_labels
+            for batch_idx in range(batch_size):
+                for type_idx in range(max_type_len):
+                    if target_positions[batch_idx][type_idx].sum() > 0:  # 跳过填充的位置
+                        cleaned_type_labels.append(type_labels[batch_idx][type_idx])
+                            
+            all_val_outputs.append({
+                'position_predictions': position_pred_outputs['position_predictions'],
+                'type_predictions': type_pred_outputs['type_predictions']
+            })
+            
+            all_val_labels.append({
+                'position_labels': position_labels,
+                'type_labels': cleaned_type_labels, # 清理后的标签 [batch_all_nums]
+                'attention_mask': attention_mask
+            })
+    
+    # 计算平均验证损失
+    avg_val_loss = total_val_loss / len(val_dataloader)
+    avg_val_position_loss = total_val_position_loss / len(val_dataloader)
+    avg_val_type_loss = total_val_type_loss / len(val_dataloader)
+    
+    # 使用收集的数据计算评估指标
+    metrics = evaluate_metrics_from_outputs(all_val_outputs, all_val_labels)
+    
+    # 计算加权得分
+    weighted_score = calculate_weighted_score(metrics)
+    
+    
+    log_message(f'Validation Loss:')
+    log_message(f'  Position Loss: {avg_val_position_loss:.4f}')
+    log_message(f'  Type Loss: {avg_val_type_loss:.4f}')
+    log_message(f'  Total Loss: {avg_val_loss:.4f}')
+    
+    # 记录评估指标
+    log_message(f'\nPerformance Metrics:')
+    log_message(f'Position Recognition:')
+    log_message(f'  Overall:')
+    log_message(f'    Precision: {metrics["position"]["precision"]:.4f}')
+    log_message(f'    Recall: {metrics["position"]["recall"]:.4f}')
+    log_message(f'    F1: {metrics["position"]["f1"]:.4f}')
+    
+    # 添加BIO标签的详细信息
+    log_message(f'  B Label:')
+    log_message(f'    Precision: {metrics["position"]["B"]["precision"]:.4f}')
+    log_message(f'    Recall: {metrics["position"]["B"]["recall"]:.4f}')
+    log_message(f'    F1: {metrics["position"]["B"]["f1"]:.4f}')
+    log_message(f'    TP: {metrics["position"]["B"]["tp"]}, FP: {metrics["position"]["B"]["fp"]}, FN: {metrics["position"]["B"]["fn"]}')
+    
+    log_message(f'  I Label:')
+    log_message(f'    Precision: {metrics["position"]["I"]["precision"]:.4f}')
+    log_message(f'    Recall: {metrics["position"]["I"]["recall"]:.4f}')
+    log_message(f'    F1: {metrics["position"]["I"]["f1"]:.4f}')
+    log_message(f'    TP: {metrics["position"]["I"]["tp"]}, FP: {metrics["position"]["I"]["fp"]}, FN: {metrics["position"]["I"]["fn"]}')
+    
+    log_message(f'  O Label:')
+    log_message(f'    Precision: {metrics["position"]["O"]["precision"]:.4f}')
+    log_message(f'    Recall: {metrics["position"]["O"]["recall"]:.4f}')
+    log_message(f'    F1: {metrics["position"]["O"]["f1"]:.4f}')
+    log_message(f'    TP: {metrics["position"]["O"]["tp"]}, FP: {metrics["position"]["O"]["fp"]}, FN: {metrics["position"]["O"]["fn"]}')
+    
+    log_message(f'Type Recognition:')
+    log_message(f'  Top-1 Accuracy: {metrics["type"]["top1_acc"]:.4f}')
+    log_message(f'  Top-3 Accuracy: {metrics["type"]["top3_acc"]:.4f}')
+    log_message(f'  Top-5 Accuracy: {metrics["type"]["top5_acc"]:.4f}')
+    log_message(f'  Mistake:')
+    log_message(f'    Positive to Negative: {metrics["type"]["mistake"]["positive_to_negative"]:.4f}')
+    log_message(f'    Negative to Positive: {metrics["type"]["mistake"]["negative_to_positive"]:.4f}')
+    log_message(f'raw_data:')
+    log_message(f'    Positive Correct: {metrics["type"]["raw_data"]["positive_correct"]}')
+    log_message(f'    Positive Total: {metrics["type"]["raw_data"]["positive_total"]}')
+    log_message(f'    Positive Top3 Correct: {metrics["type"]["raw_data"]["positive_top3_correct"]}')
+    log_message(f'    Positive Top5 Correct: {metrics["type"]["raw_data"]["positive_top5_correct"]}')
+    log_message(f'    Negative Total: {metrics["type"]["raw_data"]["negative_total"]}')
+    log_message(f'    Negative Correct: {metrics["type"]["raw_data"]["negative_correct"]}')
+    log_message('='*50)
+    
 
 def get_optimizer_and_scheduler(model, train_dataloader, num_epochs):
     """获取优化器和学习率调度器"""
@@ -655,18 +542,11 @@ def main():
     # 初始化模型
     model = AllusionBERTCRF(BERT_MODEL_PATH, num_types, dict_size,bi_label_weight=0.8).to(device)
 
-    print("\nstarting from scratch")
-    # 创建训练和验证数据集
-    train_dataset = PoetryNERDataset(
-        os.path.join(DATA_DIR, '4_train_position_no_bug_less_negatives.csv'),
-        tokenizer, MAX_SEQ_LEN,
-        type_label2id=type_label2id,
-        id2type_label=id2type_label,
-        features_path=features_path,
-        mapping_path=mapping_path,
-        negative_sample_ratio=0.05
-    )
+    checkpoint = torch.load(os.path.join(SAVE_DIR, 'best_model.pt'))
+    model.load_state_dict(checkpoint['model_state_dict'])
     
+    print("\nmodel loaded")
+    # 创建训练和验证数据集
     val_dataset = PoetryNERDataset(
         os.path.join(DATA_DIR, '4_val_position_no_bug_less_negatives.csv'),
         tokenizer, MAX_SEQ_LEN,
@@ -675,14 +555,6 @@ def main():
         features_path=features_path,
         mapping_path=mapping_path,
         negative_sample_ratio=0.05
-    )
-    
-    # 创建数据加载器
-    train_dataloader = DataLoader(
-        train_dataset, 
-        batch_size=BATCH_SIZE,
-        shuffle=True,
-        collate_fn=train_dataset.collate_fn
     )
     
     val_dataloader = DataLoader(
@@ -695,17 +567,19 @@ def main():
     # 获取优化器和调度器
     optimizer, scheduler = get_optimizer_and_scheduler(
         model=model,
-        train_dataloader=train_dataloader,
+        train_dataloader=val_dataloader,
         num_epochs=POSITION_EPOCHS
     )
+    
+    
     
     # 训练参数
     total_epochs = 30
     
     # 开始训练
-    train_model(
+    val_model(
         model=model,
-        train_dataloader=train_dataloader,
+        train_dataloader=val_dataloader,
         val_dataloader=val_dataloader,
         optimizer=optimizer,
         scheduler=scheduler,
