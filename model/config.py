@@ -20,13 +20,15 @@ min_samples_size=2
 OPTIMAL_EPS = 0.3824829931972789
 
 # 路径配置
-DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
+# DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
+DATA_DIR = os.path.join(PROJECT_ROOT, 'data_new_study_for_type')
 SAVE_DIR = os.path.join(PROJECT_ROOT, 'output_strictly')
 # SAVE_DIR = os.path.join(PROJECT_ROOT, 'output_train_together')
 TEST_PATH = os.path.join(DATA_DIR, '4_val_position_no_bug.csv')
 
 # ALLUSION_DICT_PATH = os.path.join(DATA_DIR, 'updated_典故的异性数据.csv')
-ALLUSION_DICT_PATH = os.path.join(DATA_DIR, 'updated_strictly_典故的异形数据.csv')
+# ALLUSION_DICT_PATH = os.path.join(DATA_DIR, 'updated_strictly_典故的异形数据.csv')
+ALLUSION_DICT_PATH = os.path.join(DATA_DIR, 'variants.csv')
 
 # 标签配置
 POSITION_LABELS = {

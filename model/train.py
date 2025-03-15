@@ -64,20 +64,6 @@ def load_allusion_dict(dict_file=ALLUSION_DICT_PATH):
     
     return allusion_dict, type_label2id, id2type_label, num_types
 
-def analyze_type_confusion(predictions, labels, id2type_label):
-    """分析类别混淆情况"""
-    confusion_dict = {}
-    for pred, true in zip(predictions, labels):
-        if pred != true:
-            true_type = id2type_label[true.item()]
-            pred_type = id2type_label[pred.item()]
-            key = (true_type, pred_type)
-            confusion_dict[key] = confusion_dict.get(key, 0) + 1
-    
-    # 按混淆次数排序
-    sorted_confusion = sorted(confusion_dict.items(), key=lambda x: x[1], reverse=True)
-    return sorted_confusion
-
 def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler, 
                 device, num_epochs, save_dir, task, id2type_label=None):
     """
@@ -400,12 +386,6 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
             top3_accuracy = top3_correct / total
             top5_accuracy = top5_correct / total
             
-            # 分析类别混淆
-            confusion_pairs = analyze_type_confusion(
-                torch.tensor(val_predictions), 
-                torch.tensor(val_labels), 
-                id2type_label
-            )
             
             # 打印验证结果
             print(f"\n=== Type Classification Results ===")

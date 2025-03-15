@@ -97,11 +97,11 @@ def load_features(features_path):
 
 if __name__ == "__main__":
     # 数据文件路径
-    source_path = os.path.join(DATA_DIR, '3_1_2_final_position_dataset.csv')
+    source_path = os.path.join(DATA_DIR, 'all_data.csv')
     
     # 映射文件和特征文件的保存路径
-    mapping_path = os.path.join(DATA_DIR, 'allusion_mapping_strictly_dict.json')
-    features_path = os.path.join(DATA_DIR, 'allusion_features_strictly_dict.pt')
+    mapping_path = os.path.join(DATA_DIR, 'allusion_mapping.json')
+    features_path = os.path.join(DATA_DIR, 'allusion_features.pt')
     
     # 创建并保存句子映射
     sentence_to_id = create_and_save_sentence_mappings(
