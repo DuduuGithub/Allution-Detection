@@ -258,7 +258,7 @@ class AllusionBERTCRF(nn.Module):
             target_positions: 待判断词的位置索引 [batch_size, max_type_len,2]  已考虑[CLS]和[SEP]
         
         预测模式return:
-        'position_labels': [0, 1, 2, 0, ...],  # 整句话的位置标签预测
+        'position_labels': [[0, 1, 2, 0, ...]],  # 整句话的位置标签预测
         'type_predictions': [
             (start1, end1, [(type_id1, prob1), (type_id2, prob2), ...]),  # 第一个典故
             (start2, end2, [(type_id1, prob1), (type_id2, prob2), ...]),  # 第二个典故
@@ -377,37 +377,37 @@ class AllusionBERTCRF(nn.Module):
             elif task == 'type':    
                 # 2. 类型识别任务
                 type_predictions = []
-                if len(target_positions) > 0:  # 如果有典故
-                    batch_size = type_labels.size(0)
-                    max_type_len = type_labels.size(1)
-                    
-                    # 获取原始文本
-                    tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_PATH)
-                    for batch_idx in range(batch_size):
-                        for type_idx in range(max_type_len):
-                            if target_positions[batch_idx][type_idx].sum() > 0:  # 跳过填充的位置
-                                start = target_positions[batch_idx][type_idx][0].item()
-                                end = target_positions[batch_idx][type_idx][1].item()
+                
+                batch_size = target_positions.size(0)
+                max_type_len = target_positions.size(1)
+                
+                # 获取原始文本
+                tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_PATH)
+                for batch_idx in range(batch_size):
+                    for type_idx in range(max_type_len):
+                        if target_positions[batch_idx][type_idx].sum() > 0:  # 跳过填充的位置
+                            start = target_positions[batch_idx][type_idx][0].item()
+                            end = target_positions[batch_idx][type_idx][1].item()
+                            
+                            pooled_features = self.attention_pooling(               #shape:[hidden_size * 2]
+                                lstm_output[batch_idx],start,end
+                            )
+                            
+                            type_logits = self.type_classifier(pooled_features)     #shape:[num_types]
+                            
+                            # 计算概率
+                            type_probs = F.softmax(type_logits, dim=-1)
+                            
+                            # 获取top5
+                            top5_probs, top5_indices = torch.topk(type_probs, k=min(5, type_probs.size(-1)))
+                            
+                            
+                            # 将预测结果和概率组合
+                            all_position_types = []
+                            for indice, prob in zip(top5_indices, top5_probs):
+                                all_position_types.append((indice.item(), prob.item()))  # 使用 .item() 提取值
                                 
-                                pooled_features = self.attention_pooling(               #shape:[hidden_size * 2]
-                                    lstm_output[batch_idx],start,end
-                                )
-                                
-                                type_logits = self.type_classifier(pooled_features)     #shape:[num_types]
-                                
-                                # 计算概率
-                                type_probs = F.softmax(type_logits, dim=-1)
-                                
-                                # 获取top5
-                                top5_probs, top5_indices = torch.topk(type_probs, k=min(5, type_probs.size(-1)))
-                                
-                                
-                                # 将预测结果和概率组合
-                                all_position_types = []
-                                for indice, prob in zip(top5_indices, top5_probs):
-                                    all_position_types.append((indice.item(), prob.item()))  # 使用 .item() 提取值
-                                    
-                                type_predictions.append((start-1, end-1, all_position_types))  # -1 因为[CLS]
+                            type_predictions.append((start-1, end-1, all_position_types))  # -1 因为[CLS]
 
 
                 return {

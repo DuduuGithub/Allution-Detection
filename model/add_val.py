@@ -548,7 +548,7 @@ def main():
     print("\nmodel loaded")
     # 创建训练和验证数据集
     val_dataset = PoetryNERDataset(
-        os.path.join(DATA_DIR, '4_val_position_no_bug_less_negatives.csv'),
+        os.path.join(DATA_DIR, '4_val_position_no_bug.csv'),
         tokenizer, MAX_SEQ_LEN,
         type_label2id=type_label2id,
         id2type_label=id2type_label,

@@ -19,21 +19,21 @@ from datetime import datetime
 
 
 
-# 定义加权得分计算函数
-def calculate_weighted_score(metrics, w1=0.3, w2=0.4, w3=0.3):
-    """
-    计算加权得分
-    :param metrics: 评估指标字典
-    :param w1: B/I 标签准确率的权重
-    :param w2: B/I 标签召回率的权重
-    :param w3: 类别识别任务准确率的权重
-    :return: 加权得分
-    """
-    precision_bi = (metrics["position"]["B"]["precision"] + metrics["position"]["I"]["precision"]) / 2
-    recall_bi = (metrics["position"]["B"]["recall"] + metrics["position"]["I"]["recall"]) / 2
-    top1_accuracy = metrics["type"]["top1_acc"]
-    weighted_score = w1 * precision_bi + w2 * recall_bi + w3 * top1_accuracy
-    return weighted_score
+# # 定义加权得分计算函数
+# def calculate_weighted_score(metrics, w1=0.4, w2=0.4, w3=0.2):
+#     """
+#     计算加权得分
+#     :param metrics: 评估指标字典
+#     :param w1: B/I 标签准确率的权重
+#     :param w2: B/I 标签召回率的权重
+#     :param w3: 类别识别任务准确率的权重
+#     :return: 加权得分
+#     """
+#     precision_bi = (metrics["position"]["B"]["precision"] + metrics["position"]["I"]["precision"]) / 2
+#     recall_bi = (metrics["position"]["B"]["recall"] + metrics["position"]["I"]["recall"]) / 2
+#     top1_accuracy = metrics["type"]["top1_acc"]
+#     weighted_score = w1 * precision_bi + w2 * recall_bi + w3 * top1_accuracy
+#     return weighted_score
 
 
 
@@ -349,13 +349,7 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
         if epoch <= 2:
             model.position_weight.data = torch.tensor(0.6, device=device)
         elif epoch <= 4:
-            model.position_weight.data = torch.tensor(0.3, device=device)
-        elif epoch <= 6:
-            model.position_weight.data = torch.tensor(0.2, device=device)
-        elif epoch <= 8:
-            model.position_weight.data = torch.tensor(0.18, device=device)
-        else:
-            model.position_weight.data = torch.tensor(0.16, device=device)
+            model.position_weight.data = torch.tensor(0.25, device=device)
             
         log_message(f"Epoch {epoch+1}/{num_epochs}")
         log_message(f"Position Weight (Joint Loss): {model.position_weight.item():.4f}")
@@ -469,8 +463,6 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
                     input_ids=input_ids,
                     attention_mask=attention_mask,
                     dict_features=dict_features,
-                    target_positions=target_positions,
-                    type_labels=type_labels,
                     train_mode=False,
                     task='position'
                 )
@@ -479,7 +471,6 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
                     attention_mask=attention_mask,
                     dict_features=dict_features,
                     target_positions=target_positions,
-                    type_labels=type_labels,
                     train_mode=False,
                     task='type'
                 )
@@ -512,24 +503,35 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
         # 使用收集的数据计算评估指标
         metrics = evaluate_metrics_from_outputs(all_val_outputs, all_val_labels)
         
-        # 计算加权得分
-        weighted_score = calculate_weighted_score(metrics)
+        # # 计算加权得分
+        # weighted_score = calculate_weighted_score(metrics)
         
-        # 保存最佳模型（基于加权得分）
-        if weighted_score >= best_weighted_score:
-            best_weighted_score = weighted_score
+        # # 保存最佳模型（基于加权得分）
+        # if weighted_score >= best_weighted_score:
+        #     best_weighted_score = weighted_score
+        #     torch.save({
+        #         'epoch': epoch,
+        #         'model_state_dict': model.state_dict(),
+        #         'optimizer_state_dict': optimizer.state_dict(),
+        #         'loss': avg_val_loss,
+        #         'weighted_score': best_weighted_score,
+        #     }, os.path.join(save_dir, 'best_model.pt'))
+        #     log_message(f'Saved new best model with weighted score: {best_weighted_score:.4f}')
+        #     patience_counter = 0  # 重置耐心计数器
+        # else:
+        #     patience_counter += 1  # 增加耐心计数器
+        
+        # 保存最佳模型
+        if epoch >= 15:
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': avg_val_loss,
                 'weighted_score': best_weighted_score,
-            }, os.path.join(save_dir, 'best_model.pt'))
-            log_message(f'Saved new best model with weighted score: {best_weighted_score:.4f}')
-            patience_counter = 0  # 重置耐心计数器
-        else:
-            patience_counter += 1  # 增加耐心计数器
-        
+            }, os.path.join(save_dir, f'best_model_epoch_{epoch}.pt'))
+            log_message(f'Saved new best model with epoch: {epoch:.4f}')
+
         # 记录每个epoch的训练信息
         log_message(f'\nEpoch {epoch+1}/{num_epochs} Summary:')
         log_message(f'Training Loss:')
@@ -584,11 +586,11 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
         log_message(f'    Negative Correct: {metrics["type"]["raw_data"]["negative_correct"]}')
         log_message('='*50)
         
-        # 检查是否触发早停
-        if patience_counter >= patience:
-            early_stop = True
-            log_message(f'Early stopping triggered at epoch {epoch+1}. Best weighted score: {best_weighted_score:.4f}')
-            break
+        # # 检查是否触发早停
+        # if patience_counter >= patience:
+        #     early_stop = True
+        #     log_message(f'Early stopping triggered at epoch {epoch+1}. Best weighted score: {best_weighted_score:.4f}')
+        #     break
 
 def get_optimizer_and_scheduler(model, train_dataloader, num_epochs):
     """获取优化器和学习率调度器"""
@@ -700,7 +702,7 @@ def main():
     )
     
     # 训练参数
-    total_epochs = 30
+    total_epochs = 20
     
     # 开始训练
     train_model(
