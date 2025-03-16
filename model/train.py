@@ -6,7 +6,7 @@ from model.poetry_dataset import PoetryNERDataset
 from model.bert_crf import AllusionBERTCRF, prepare_sparse_features
 from model.config import (
     BERT_MODEL_PATH, MAX_SEQ_LEN, BATCH_SIZE, 
-    POSITION_EPOCHS, TYPE_EPOCHS, LEARNING_RATE,
+    EPOCHS,
     SAVE_DIR, DATA_DIR, ALLUSION_DICT_PATH
 )
 import torch
@@ -698,11 +698,8 @@ def main():
     optimizer, scheduler = get_optimizer_and_scheduler(
         model=model,
         train_dataloader=train_dataloader,
-        num_epochs=POSITION_EPOCHS
+        num_epochs=EPOCHS
     )
-    
-    # 训练参数
-    total_epochs = 20
     
     # 开始训练
     train_model(
@@ -712,7 +709,7 @@ def main():
         optimizer=optimizer,
         scheduler=scheduler,
         device=device,
-        num_epochs=total_epochs,
+        num_epochs=EPOCHS,
         save_dir=SAVE_DIR,
         position_weight=0.5,  # 联合训练中位置任务的权重
         id2type_label=id2type_label

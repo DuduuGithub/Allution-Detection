@@ -6,8 +6,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # 模型配置
 MODEL_NAME = 'guwenbert-large'
 BERT_MODEL_PATH = os.path.join(PROJECT_ROOT, 'model', MODEL_NAME)
-POSITION_EPOCHS = 10
-TYPE_EPOCHS = 30
+EPOCHS=20
 LEARNING_RATE = 2e-5
 
 # 数据配置
