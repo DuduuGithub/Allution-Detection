@@ -6,7 +6,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # 模型配置
 MODEL_NAME = 'guwenbert-large'
 BERT_MODEL_PATH = os.path.join(PROJECT_ROOT, 'model', MODEL_NAME)
-EPOCHS=20
+EPOCHS=17
 LEARNING_RATE = 2e-5
 
 # 数据配置
@@ -22,7 +22,8 @@ OPTIMAL_EPS = 0.3824829931972789
 DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
 # SAVE_DIR = os.path.join(PROJECT_ROOT, 'output_strictly')
 # SAVE_DIR = os.path.join(PROJECT_ROOT, 'output_train_together')
-SAVE_DIR = os.path.join(PROJECT_ROOT, 'output_jointly_train')
+# SAVE_DIR = os.path.join(PROJECT_ROOT, 'output_jointly_train')
+SAVE_DIR = os.path.join(PROJECT_ROOT, 'output_jointly_train_normalize_loss')
 TEST_PATH = os.path.join(DATA_DIR, '4_val_position_no_bug.csv')
 
 # ALLUSION_DICT_PATH = os.path.join(DATA_DIR, 'updated_典故的异性数据.csv')

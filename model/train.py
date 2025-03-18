@@ -16,7 +16,7 @@ from torch.optim import AdamW
 import argparse
 import pandas as pd
 from datetime import datetime
-
+import math
 
 
 # # 定义加权得分计算函数
@@ -304,7 +304,7 @@ def evaluate_metrics_from_outputs(outputs, labels):
 
     
 def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler, 
-                device, num_epochs, save_dir, position_weight=0.6,
+                device, num_epochs, save_dir,
                 id2type_label=None):
     """
     联合训练模型
@@ -330,14 +330,11 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
         print(message)
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write(message + '\n')
-    
+    log_message(f"这是正则化损失后的测试，将positionweight为0.5，bi_label_weight为0.15")
     log_message(f"Starting training with {num_epochs} epochs")
     log_message(f"Training samples: {len(train_dataloader.dataset)}")
     log_message(f"Validation samples: {len(val_dataloader.dataset)}")
-    
-    # 设置联合训练的权重
-    model.position_weight.data = torch.tensor(position_weight, device=device)
-    
+        
     # 初始化早停机制相关变量
     best_weighted_score = -1  # 最佳加权得分
     patience = 4  # 最大耐心值
@@ -345,14 +342,20 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
     early_stop = False  # 是否触发早停
     
     for epoch in range(num_epochs):
-        # 可以根据需要动态调整权重
-        if epoch <= 2:
-            model.position_weight.data = torch.tensor(0.6, device=device)
-        elif epoch <= 4:
-            model.position_weight.data = torch.tensor(0.25, device=device)
-            
+        # # 动态调整权重
+        # position_weight = 0.4 - (0.4 - 0.15) * (epoch / num_epochs)
+        # model.position_weight.data = torch.tensor(position_weight, device=device)
+        
+        
+        # # 可以根据需要动态调整权重
+        # if epoch <= 2:
+        #     model.position_weight.data = torch.tensor(position_weight, device=device)
+        # elif epoch <= 4:
+        #     model.position_weight.data = torch.tensor(0.2, device=device)
+        # else:
+        #     model.position_weight.data = torch.tensor(0.15, device=device)
         log_message(f"Epoch {epoch+1}/{num_epochs}")
-        log_message(f"Position Weight (Joint Loss): {model.position_weight.item():.4f}")
+        log_message(f"Position Weight (Joint Loss): {model.position_weight:.4f}")
         log_message(f"B/I Label Weight: {model.bi_label_weight.item():.4f}")
         
         # 训练阶段
@@ -414,7 +417,7 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
                 log_message(f'  Position Loss: {outputs["position_loss"]:.4f}')
                 log_message(f'  Type Loss: {outputs["type_loss"]:.4f}')
                 log_message(f'  Total Loss: {loss.item():.4f}')
-                log_message(f'  Position Weight: {model.position_weight.item():.4f}')
+                log_message(f'  Position Weight: {model.position_weight:.4f}')
                 log_message(f'  B/I Label Weight: {model.bi_label_weight.item():.4f}')
         
         # 计算平均训练损失
@@ -522,7 +525,7 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
         #     patience_counter += 1  # 增加耐心计数器
         
         # 保存最佳模型
-        if epoch >= 15:
+        if epoch >= 10:
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
@@ -655,7 +658,8 @@ def main():
     tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_PATH)
     
     # 初始化模型
-    model = AllusionBERTCRF(BERT_MODEL_PATH, num_types, dict_size,bi_label_weight=0.8).to(device)
+    model = AllusionBERTCRF(BERT_MODEL_PATH, num_types, dict_size,
+                            bi_label_weight=0.15,position_weight=0.65).to(device)
 
     print("\nstarting from scratch")
     # 创建训练和验证数据集
@@ -711,7 +715,6 @@ def main():
         device=device,
         num_epochs=EPOCHS,
         save_dir=SAVE_DIR,
-        position_weight=0.5,  # 联合训练中位置任务的权重
         id2type_label=id2type_label
     )
 

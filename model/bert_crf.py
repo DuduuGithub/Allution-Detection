@@ -14,7 +14,7 @@ import torch.nn.functional as F
 class AllusionBERTCRF(nn.Module):
     
     #num_types: 类型数量 需要在使用时通过建立allution_types.txt的映射关系的同时获得
-    def __init__(self, bert_path, num_types, dict_size, bi_label_weight=0.6):
+    def __init__(self, bert_path, num_types, dict_size, bi_label_weight,position_weight):
         """
         Args:
             bert_path: BERT模型路径
@@ -27,8 +27,7 @@ class AllusionBERTCRF(nn.Module):
         self.bi_label_weight = nn.Parameter(torch.tensor(bi_label_weight))
         
         # 联合训练的权重参数（用于联合损失计算）
-        self.position_weight = nn.Parameter(torch.tensor(0.5))
-        self.register_parameter('position_weight', self.position_weight)
+        self.position_weight = position_weight
         
         # BERT基础模型
         self.bert = BertModel.from_pretrained(bert_path)
@@ -195,30 +194,32 @@ class AllusionBERTCRF(nn.Module):
 
     def weighted_crf_loss(self, emissions, labels, mask):
         """
-        计算带权重的CRF损失
+        计算带权重的CRF损失，对发射分数进行加权
         Args:
             emissions: [batch_size, seq_len, num_tags]
             labels: [batch_size, seq_len]
             mask: [batch_size, seq_len]
-        """
-        batch_size, seq_len = labels.shape
-        
-        # 创建权重矩阵
-        weights = torch.ones_like(labels, dtype=torch.float)
+        """        
+        # 创建权重矩阵 [batch_size, seq_len, 1]
         weights = torch.where(labels > 0, 
-                             torch.tensor(self.bi_label_weight, device=labels.device),
-                             torch.tensor(1 - self.bi_label_weight, device=labels.device))
+                             torch.tensor(1 + self.bi_label_weight, device=labels.device),
+                             torch.ones(1, device=labels.device))
         
-        # 计算基础CRF损失
-        base_loss = -self.position_crf(
-            emissions,
+        # 直接将权重扩展到所有标签维度 [batch_size, seq_len, num_tags]
+        weights = weights.unsqueeze(-1).expand_as(emissions)
+        
+        # 计算加权发射分数 [batch_size, seq_len, num_tags]
+        weighted_emissions = emissions * weights
+        
+        # 计算CRF损失
+        loss = -self.position_crf(
+            weighted_emissions,
             labels,
             mask=mask,
             reduction='none'
         )
         
-        weighted_loss = base_loss * weights.mean(dim=1)
-        return weighted_loss.mean()
+        return loss.mean()
 
 
     def type_classification_loss(self, logits, labels, label_smoothing=0.1, gamma=2.0):
@@ -346,6 +347,8 @@ class AllusionBERTCRF(nn.Module):
                 batch_type_labels
             )
             
+            type_loss*=10 # 为了保持类别识别和位置识别的数量级相同
+            
             # 使用动态权重计算联合损失
             joint_loss = (self.position_weight * position_loss + 
                           (1 - self.position_weight) * type_loss)
@@ -354,8 +357,8 @@ class AllusionBERTCRF(nn.Module):
                 'position_loss': position_loss.item(),
                 'type_loss': type_loss.item(),
                 'joint_loss': joint_loss,
-                'position_weight': self.position_weight.item(),
-                'type_weight': (1 - self.position_weight).item()
+                'position_weight': self.position_weight,
+                'type_weight': (1 - self.position_weight)
             }
         elif train_mode == False:
             # 预测模式
