@@ -80,21 +80,14 @@ class PoetryNERDataset(Dataset):
             
             if variation_number > 0:
                 # 处理有典故的情况
-                transformed_allusions = parts[6].strip().split(';')
-                for allusion in transformed_allusions:
-                    # 去除最外层的方括号
-                    allusion = allusion.strip('[] \t\n\r')
-                    if not allusion:
-                        continue
-                        
+                if len(parts)>=8:
+                    single_allusion=parts[7].strip()
+                    single_allusion = single_allusion.strip('[] \t\n\r')
                     # 分离位置和类型
-                    pos_end = allusion.rfind(',')
-                    if pos_end == -1:
-                        continue
-                        
-                    positions_str = allusion[:pos_end].strip('[]')
+                    pos_end = single_allusion.rfind(',')
+                    positions_str = single_allusion[:pos_end].strip('[]')
                     # 提取并清理类型标签，处理括号内的内容
-                    allusion_type = allusion[pos_end + 1:].strip()
+                    allusion_type = single_allusion[pos_end + 1:].strip()
                     
                     try:
                         # 解析位置字符串为数字列表
@@ -109,8 +102,40 @@ class PoetryNERDataset(Dataset):
                             # 记录典故信息
                             allusion_info.append((positions[0], positions[-1], allusion_type))
                     except ValueError:
-                        print(f"Warning: Invalid position format in {allusion}")
-                        continue
+                        print(f"Warning: Invalid position format in {single_allusion}")
+                        
+                else:
+                    transformed_allusions = parts[6].strip().split(';')
+                    for allusion in transformed_allusions:
+                        # 去除最外层的方括号
+                        allusion = allusion.strip('[] \t\n\r')
+                        if not allusion:
+                            continue
+                            
+                        # 分离位置和类型
+                        pos_end = allusion.rfind(',')
+                        if pos_end == -1:
+                            continue
+                            
+                        positions_str = allusion[:pos_end].strip('[]')
+                        # 提取并清理类型标签，处理括号内的内容
+                        allusion_type = allusion[pos_end + 1:].strip()
+                        
+                        try:
+                            # 解析位置字符串为数字列表
+                            positions = [int(pos.strip()) for pos in positions_str.split(',')]
+                            
+                            if positions:
+                                # 设置位置标签
+                                position_labels[positions[0]] = 'B'
+                                for pos in positions[1:]:
+                                    position_labels[pos] = 'I'
+                                
+                                # 记录典故信息
+                                allusion_info.append((positions[0], positions[-1], allusion_type))
+                        except ValueError:
+                            print(f"Warning: Invalid position format in {allusion}")
+                            continue
             
             # 转换标签为ID
             position_ids = [self.position_label2id[label] for label in position_labels]

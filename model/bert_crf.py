@@ -14,7 +14,7 @@ import torch.nn.functional as F
 class AllusionBERTCRF(nn.Module):
     
     #num_types: 类型数量 需要在使用时通过建立allution_types.txt的映射关系的同时获得
-    def __init__(self, bert_path, num_types, dict_size, bi_label_weight,position_weight):
+    def __init__(self, bert_path, num_types, dict_size, bi_label_weight=0.15,position_weight=0.5):
         """
         Args:
             bert_path: BERT模型路径

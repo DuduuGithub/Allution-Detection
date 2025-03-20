@@ -292,8 +292,8 @@ def evaluate_metrics_from_outputs(outputs, labels):
             'top5_acc': type_positive_top5_correct / type_positive_total if type_positive_total > 0 else 0,
             'negative_acc': type_negative_correct / type_negative_total if type_negative_total > 0 else 0,
             'mistake': {
-                'positive_to_negative': type_mistake_positive_to_negative/type_positive_total,
-                'negative_to_positive': type_mistake_negative_to_positive/type_negative_total
+                'positive_to_negative': type_mistake_positive_to_negative/type_positive_total if type_positive_total > 0 else 0,
+                'negative_to_positive': type_mistake_negative_to_positive/type_negative_total if type_negative_total > 0 else 0
             }
         }
     }
@@ -330,7 +330,7 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler,
         print(message)
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write(message + '\n')
-    log_message(f"这是正则化损失后的测试，将positionweight为0.5，bi_label_weight为0.15")
+    log_message(f"这是正则化损失后的测试，将positionweight为{model.position_weight:.4f}，bi_label_weight为{model.bi_label_weight.item():.4f}")
     log_message(f"Starting training with {num_epochs} epochs")
     log_message(f"Training samples: {len(train_dataloader.dataset)}")
     log_message(f"Validation samples: {len(val_dataloader.dataset)}")
@@ -623,9 +623,6 @@ def get_optimizer_and_scheduler(model, train_dataloader, num_epochs):
     )
     
     return optimizer, scheduler
-
-
-
     
 def main():
     # 基础配置
@@ -659,12 +656,12 @@ def main():
     
     # 初始化模型
     model = AllusionBERTCRF(BERT_MODEL_PATH, num_types, dict_size,
-                            bi_label_weight=0.15,position_weight=0.65).to(device)
+                            bi_label_weight=0.15,position_weight=0.0).to(device)
 
     print("\nstarting from scratch")
     # 创建训练和验证数据集
     train_dataset = PoetryNERDataset(
-        os.path.join(DATA_DIR, '4_train_position_no_bug_less_negatives.csv'),
+        os.path.join(DATA_DIR, '5_train_position_no_bug_less_negatives_single_allusion.csv'),
         tokenizer, MAX_SEQ_LEN,
         type_label2id=type_label2id,
         id2type_label=id2type_label,
@@ -674,7 +671,7 @@ def main():
     )
     
     val_dataset = PoetryNERDataset(
-        os.path.join(DATA_DIR, '4_val_position_no_bug_less_negatives.csv'),
+        os.path.join(DATA_DIR, '5_val_position_no_bug_less_negatives_single_allusion.csv'),
         tokenizer, MAX_SEQ_LEN,
         type_label2id=type_label2id,
         id2type_label=id2type_label,
