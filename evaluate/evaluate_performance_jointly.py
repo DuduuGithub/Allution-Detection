@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from datetime import datetime
 from model.train import evaluate_metrics_from_outputs
+import json
 
 def load_models(model_name):
     """加载预训练模型"""
@@ -53,7 +54,7 @@ def load_models(model_name):
 
     return model, tokenizer, device
 
-def evaluate_jointly(model, dataloader, device, id2type_label):
+def evaluate_jointly(model, dataloader, device, id2type_label, tokenizer):
     """联合评估位置识别和类型识别任务"""
     # 初始化统计变量
     total_loss = 0
@@ -64,6 +65,11 @@ def evaluate_jointly(model, dataloader, device, id2type_label):
     all_outputs = []
     all_labels = []
     
+    # 初始化错误案例收集列表
+    position_errors = []
+    type_errors = []
+    all_errors = []
+    
     pbar = tqdm(dataloader, desc="Evaluating jointly")
     with torch.no_grad():
         for batch in pbar:
@@ -72,6 +78,7 @@ def evaluate_jointly(model, dataloader, device, id2type_label):
             position_labels = batch['position_labels'].to(device)
             target_positions = batch['target_positions'].to(device)
             type_labels = batch['type_labels'].to(device)
+            batch_texts=batch['text']
             
             dict_features = {
                 'indices': batch['dict_features']['indices'].to(device),
@@ -133,6 +140,49 @@ def evaluate_jointly(model, dataloader, device, id2type_label):
                 'attention_mask': attention_mask
             })
             
+            # 对每个样本进行错误分析
+            for idx in range(len(batch_texts)):
+                text = batch_texts[idx]
+                pos_pred = position_pred_outputs['position_predictions'][idx]
+                pos_true = position_labels[idx]
+                
+                # 获取当前样本的类型预测
+                sample_type_preds = type_pred_outputs['type_predictions'][idx]
+                
+                # 根据文本长度裁剪position标签
+                text_tokens = tokenizer.tokenize(text)
+                text_len = len(text_tokens)
+                pos_true = pos_true[1:text_len+1].cpu().tolist()
+                pos_pred = pos_pred[:text_len]
+                
+                # 确保使用张量进行比较
+                has_position_error = not torch.equal(
+                    torch.tensor(pos_pred),
+                    torch.tensor(pos_true)
+                )
+                
+                # 从预测元组中提取最可能的类别
+                pred_type = sample_type_preds[2][0][0]  # 获取概率最高的类别ID
+                current_type_label = cleaned_type_labels[idx]  # 使用清理后的标签
+                has_type_error = pred_type != current_type_label.item()
+                
+                # 将预测和标签转换为列表以进行保存
+                error_info = {
+                    'text': text,
+                    'position_pred': pos_pred,
+                    'position_true': pos_true,
+                    'type_pred': [id2type_label[sample_type_preds[2][0][0]]],  # 最可能的类别
+                    'type_true': [id2type_label[current_type_label.item()]],  # 使用清理后的标签
+                    'type_pred_probs': [(id2type_label[class_id], prob) for class_id, prob in sample_type_preds[2][:5]]
+                }
+                
+                if has_position_error:
+                    position_errors.append(error_info)
+                if has_type_error:
+                    type_errors.append(error_info)
+                if has_position_error or has_type_error:
+                    all_errors.append(error_info)
+            
             # 更新进度条
             avg_loss = total_loss / (pbar.n + 1)
             pbar.set_postfix({'avg_loss': f"{avg_loss:.4f}"})
@@ -171,7 +221,8 @@ def evaluate_jointly(model, dataloader, device, id2type_label):
     print(f"  Top-5 Accuracy: {metrics['type']['top5_acc']:.4f}")
     print(f"  Negative Accuracy: {metrics['type']['negative_acc']:.4f}")
     
-    return metrics, {'total': avg_loss, 'position': avg_position_loss, 'type': avg_type_loss}
+    return metrics, {'total': avg_loss, 'position': avg_position_loss, 'type': avg_type_loss}, \
+           {'position': position_errors, 'type': type_errors, 'all': all_errors}
 
 def save_evaluation_results(save_dir, metrics, losses):
     """保存评估结果到文件"""
@@ -205,6 +256,173 @@ def save_evaluation_results(save_dir, metrics, losses):
         f.write(f"  Top-3 Accuracy: {metrics['type']['top3_acc']:.4f}\n")
         f.write(f"  Top-5 Accuracy: {metrics['type']['top5_acc']:.4f}\n")
         f.write(f"  Negative Accuracy: {metrics['type']['negative_acc']:.4f}\n")
+    
+    print(f"\nResults saved to: {result_file}")
+
+def save_error_cases(save_dir, error_cases, timestamp):
+    """保存错误案例到文件"""
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # 保存不同类型的错误
+    for error_type, errors in error_cases.items():
+        filename = os.path.join(save_dir, f'error_cases_{error_type}_{timestamp}.txt')
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(f"Total {error_type} errors: {len(errors)}\n\n")
+            for i, error in enumerate(errors, 1):
+                f.write(f"Error Case {i}:\n")
+                f.write(f"Text: {error['text']}\n")
+                f.write(f"Position Prediction: {error['position_pred']}\n")
+                f.write(f"Position True: {error['position_true']}\n")
+                f.write(f"Type Prediction: {error['type_pred']}\n")
+                f.write(f"Type True: {error['type_true']}\n")
+                f.write("\n" + "="*50 + "\n\n")
+        print(f"Saved {error_type} error cases to: {filename}")
+
+def save_error_cases_json(save_dir, error_type, errors, metrics, losses, timestamp):
+    """保存单个错误类型的案例为JSON格式"""
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # 构建结果字典
+    results = {
+        "timestamp": timestamp,
+        "error_type": error_type,
+        "total_errors": len(errors),
+        "metrics": {
+            "position": {
+                "overall": {
+                    "precision": metrics['position']['precision'],
+                    "recall": metrics['position']['recall'],
+                    "f1": metrics['position']['f1']
+                },
+                "by_label": {
+                    label: {
+                        "precision": metrics['position'][label]['precision'],
+                        "recall": metrics['position'][label]['recall'],
+                        "f1": metrics['position'][label]['f1'],
+                        "tp": metrics['position'][label]['tp'],
+                        "fp": metrics['position'][label]['fp'],
+                        "fn": metrics['position'][label]['fn']
+                    } for label in ['B', 'I', 'O']
+                }
+            },
+            "type": {
+                "top1_accuracy": metrics['type']['top1_acc'],
+                "top3_accuracy": metrics['type']['top3_acc'],
+                "top5_accuracy": metrics['type']['top5_acc'],
+                "negative_accuracy": metrics['type']['negative_acc']
+            }
+        },
+        "losses": {
+            "total": float(losses['total']),
+            "position": float(losses['position']),
+            "type": float(losses['type'])
+        },
+        "error_cases": [
+            {
+                "text": error['text'],
+                "position_pred": error['position_pred'],
+                "position_true": error['position_true'],
+                "type_pred": error['type_pred'],
+                "type_true": error['type_true'],
+                "type_pred_probs": [
+                    {"type": t, "probability": float(p)} 
+                    for t, p in error['type_pred_probs']
+                ]
+            } for error in errors
+        ]
+    }
+    
+    # 保存为JSON文件
+    result_file = os.path.join(save_dir, f'error_cases_{error_type}_{timestamp}.json')
+    with open(result_file, 'w', encoding='utf-8') as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
+    
+    print(f"Saved {error_type} error cases to JSON: {result_file}")
+
+def save_evaluation_results_json(save_dir, metrics, losses, error_cases, timestamp):
+    """保存评估结果为JSON格式"""
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # 构建结果字典
+    results = {
+        "timestamp": timestamp,
+        "metrics": {
+            "position": {
+                "overall": {
+                    "precision": metrics['position']['precision'],
+                    "recall": metrics['position']['recall'],
+                    "f1": metrics['position']['f1']
+                },
+                "by_label": {
+                    label: {
+                        "precision": metrics['position'][label]['precision'],
+                        "recall": metrics['position'][label]['recall'],
+                        "f1": metrics['position'][label]['f1'],
+                        "tp": metrics['position'][label]['tp'],
+                        "fp": metrics['position'][label]['fp'],
+                        "fn": metrics['position'][label]['fn']
+                    } for label in ['B', 'I', 'O']
+                }
+            },
+            "type": {
+                "top1_accuracy": metrics['type']['top1_acc'],
+                "top3_accuracy": metrics['type']['top3_acc'],
+                "top5_accuracy": metrics['type']['top5_acc'],
+                "negative_accuracy": metrics['type']['negative_acc']
+            }
+        },
+        "losses": {
+            "total": float(losses['total']),
+            "position": float(losses['position']),
+            "type": float(losses['type'])
+        },
+        "error_cases": {
+            "position": [
+                {
+                    "text": error['text'],
+                    "position_pred": error['position_pred'],
+                    "position_true": error['position_true'],
+                    "type_pred": error['type_pred'],
+                    "type_true": error['type_true'],
+                    "type_pred_probs": [
+                        {"type": t, "probability": float(p)} 
+                        for t, p in error['type_pred_probs']
+                    ]
+                } for error in error_cases['position']
+            ],
+            "type": [
+                {
+                    "text": error['text'],
+                    "position_pred": error['position_pred'],
+                    "position_true": error['position_true'],
+                    "type_pred": error['type_pred'],
+                    "type_true": error['type_true'],
+                    "type_pred_probs": [
+                        {"type": t, "probability": float(p)} 
+                        for t, p in error['type_pred_probs']
+                    ]
+                } for error in error_cases['type']
+            ],
+            "all": [
+                {
+                    "text": error['text'],
+                    "position_pred": error['position_pred'],
+                    "position_true": error['position_true'],
+                    "type_pred": error['type_pred'],
+                    "type_true": error['type_true'],
+                    "type_pred_probs": [
+                        {"type": t, "probability": float(p)} 
+                        for t, p in error['type_pred_probs']
+                    ]
+                } for error in error_cases['all']
+            ]
+        }
+    }
+    
+    # 保存为JSON文件
+    result_file = os.path.join(save_dir, f'evaluation_results_{timestamp}.json')
+    with open(result_file, 'w', encoding='utf-8') as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
     
     print(f"\nResults saved to: {result_file}")
 
@@ -243,14 +461,27 @@ def main():
             print(f"Allocated: {torch.cuda.memory_allocated()/1024**2:.1f}MB")
         
         # 联合评估
-        metrics, losses = evaluate_jointly(model, test_dataloader, device, id2type_label)
+        metrics, losses, error_cases = evaluate_jointly(model, test_dataloader, device, id2type_label, tokenizer)
         
         # 使用os.path来构建正确的保存路径
-        current_dir = os.path.dirname(os.path.abspath(__file__))  # 获取当前文件所在目录
-        save_dir = os.path.join(current_dir, 'evaluate_output_jointly')
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        save_dir = os.path.join(current_dir, 'wrong_samples')
         
-        # 保存评估结果
+        # 获取时间戳
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # 保存评估结果（文本格式）
         save_evaluation_results(save_dir, metrics, losses)
+        
+        # 保存错误案例（文本格式）
+        save_error_cases(save_dir, error_cases, timestamp)
+        
+        # 保存错误案例（JSON格式）- 分别保存三种错误类型
+        for error_type, errors in error_cases.items():
+            save_error_cases_json(save_dir, error_type, errors, metrics, losses, timestamp)
+        
+        # 保存所有结果（JSON格式）
+        save_evaluation_results_json(save_dir, metrics, losses, error_cases, timestamp)
         
     except Exception as e:
         print(f"\nError during evaluation: {str(e)}")

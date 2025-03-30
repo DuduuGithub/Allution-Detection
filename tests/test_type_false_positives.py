@@ -17,41 +17,59 @@ import random
 from collections import defaultdict
 from sklearn.metrics import classification_report
 
-def test_type_false_positives():
-    """测试类型识别模型对非典故位置的误判情况"""
+def load_models(model_name):
+    """加载预训练模型"""
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
-    # 加载模型和tokenizer
     tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_PATH)
-    allusion_dict, type_label2id, id2type_label, num_types = load_allusion_dict()
+    
+    # 加载典故词典以获取类型数量
+    allusion_dict, _, _, num_types = load_allusion_dict()
     dict_size = len(allusion_dict)
     
-    # 创建并加载模型
-    model = AllusionBERTCRF(BERT_MODEL_PATH, num_types, dict_size).to(device)
-    checkpoint = torch.load(f'{SAVE_DIR}/best_model_type.pt', map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.eval()
+    # 创建一个模型实例
+    model = AllusionBERTCRF(BERT_MODEL_PATH, num_types, dict_size=dict_size).to(device)
     
-    # 预处理特征和映射文件路径
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    SAVE_DIR = os.path.join(PROJECT_ROOT, 'trained_result')
+    
+    # 加载模型参数并处理多余的键
+    position_checkpoint = torch.load(f'{SAVE_DIR}/{model_name}.pt', map_location=device)
+    
+    print('testing model path:',f'{SAVE_DIR}/{model_name}.pt')
+    
+    state_dict = position_checkpoint['model_state_dict']
+    
+    # 移除多余的键
+    for key in list(state_dict.keys()):
+        if key not in model.state_dict():
+            print(f"Removing unexpected key: {key}")
+            del state_dict[key]
+    
+    model.load_state_dict(state_dict)
+    model.eval()
+
+    return model, tokenizer, device
+
+def test_type_false_positives():
+    """测试类型识别模型对非典故位置的误判情况"""
+    _, type_label2id, id2type_label, _ = load_allusion_dict()
+    model, tokenizer, device = load_models('output_jointly_train_normalize_loss/best_model_3.17.22.09')
+    
+   # 预处理特征和映射文件路径
     features_path = os.path.join(DATA_DIR, 'allusion_features_strictly_dict.pt')
     mapping_path = os.path.join(DATA_DIR, 'allusion_mapping_strictly_dict.json')
     
-    # 创建数据集
+    # 创建测试数据集
     test_dataset = PoetryNERDataset(
-        file_path=os.path.join(DATA_DIR, '4_test_type.csv'),#其实用不到
-        tokenizer=tokenizer,
-        max_len=MAX_SEQ_LEN,
+        os.path.join(DATA_DIR, '4_test_position_no_bug_less_negatives.csv'),
+        tokenizer, MAX_SEQ_LEN,
         type_label2id=type_label2id,
         id2type_label=id2type_label,
-        task='type',
         features_path=features_path,
         mapping_path=mapping_path,
-        positive_sample_ratio=0.0
+        negative_sample_ratio=0.05
     )
     
-    print(f"加载的数据集样本数: {len(test_dataset)}")
-    
-    # 创建dataloader
     test_dataloader = DataLoader(
         test_dataset,
         batch_size=BATCH_SIZE,

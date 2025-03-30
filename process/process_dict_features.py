@@ -50,8 +50,10 @@ def create_and_save_sentence_mappings(source_path, output_path):
 def preprocess_all_features(sentence_to_id, features_output_path):
     """预处理所有句子的特征并保存"""
     # 加载典故字典
-    allusion_dict, _, _, _ = load_allusion_dict()
-    
+    allusion_dict, _, id2type, _ = load_allusion_dict()
+    with open('id2type_mapping——process.txt', 'w', encoding='utf-8') as f:
+        for type_id, type_name in id2type.items():
+            f.write(f"{type_id}\t{type_name}\n")
     # 存储所有特征
     all_features = {}
     
@@ -97,11 +99,11 @@ def load_features(features_path):
 
 if __name__ == "__main__":
     # 数据文件路径
-    source_path = os.path.join(DATA_DIR, '3_1_2_final_position_dataset.csv')
+    source_path = os.path.join(DATA_DIR, '4_test_position_no_bug_less_negatives.csv')
     
     # 映射文件和特征文件的保存路径
-    mapping_path = os.path.join(DATA_DIR, 'allusion_mapping_strictly_dict.json')
-    features_path = os.path.join(DATA_DIR, 'allusion_features_strictly_dict.pt')
+    mapping_path = os.path.join(DATA_DIR, 'allusion_mapping_MSM.json')
+    features_path = os.path.join(DATA_DIR, 'allusion_features_MSM.pt')
     
     # 创建并保存句子映射
     sentence_to_id = create_and_save_sentence_mappings(

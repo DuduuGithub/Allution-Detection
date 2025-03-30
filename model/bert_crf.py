@@ -147,6 +147,23 @@ class AllusionBERTCRF(nn.Module):
 
         # active_counts记录实际数量
         active_counts[0] = [1, 3, 0, 4, 1]
+        
+        indices = [
+            [1, 0, 0, 0, 0], 
+            [0, 0, 0, 0, 0],  
+            [5, 2, 0, 0, 0],  
+            [5, 6, 7, 8, 0],  
+            [5, 0, 0, 0, 0]   
+        ]
+        values = [
+            [0.57, 0.0, 0.0, 0.0, 0.0],  
+            [0.00, 0.0, 0.0, 0.0, 0.0],  
+            [0.87, 0.6, 0.0, 0.0, 0.0],  
+            [0.89, 0.8, 0.7, 0.6, 0.0],  
+            [0.92 0.0, 0.0, 0.0, 0.0]   
+        ]
+        active_counts[0] = [1, 0, 2, 4, 1]
+        
         """
         batch_size, seq_len, max_active = dict_features['indices'].shape
         

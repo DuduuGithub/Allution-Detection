@@ -1,11 +1,8 @@
 from difflib import SequenceMatcher
 import numpy as np
-from sklearn.cluster import DBSCAN
-import json
-import pandas as pd
-from tqdm import tqdm
 
 # 计算两个字符串之间的相似度
+#ATTENTION 这个算法是在写报告时更新的！在模型中使用的是原来的算法，原来只对sorted==sorted额外处理
 def string_similarity(str1, str2):
     """计算两个字符串之间的相似度
     
@@ -19,15 +16,16 @@ def string_similarity(str1, str2):
     if str1 == str2:
         return 1.0
         
-    # 使用 SequenceMatcher 计算相似度
-    # SequenceMatcher 会考虑字符的顺序和位置，但对调换位置的相同字符仍然保持较高的相似度
-    similarity = SequenceMatcher(None, str1, str2).ratio()
+    # 计算原始顺序的相似度
+    original_similarity = SequenceMatcher(None, str1, str2).ratio()
     
-    # 对于完全相同字符的不同排列（如"侩牛"和"牛侩"），增加其相似度
-    if sorted(str1) == sorted(str2):
-        similarity = max(similarity, 0.8)  # 确保位置调换的相同字符有较高的相似度
-        
-    return similarity
+    # 计算排序后的相似度
+    sorted_similarity = SequenceMatcher(None, ''.join(sorted(str1)), ''.join(sorted(str2))).ratio()
+    
+    # 组合两种相似度，给排序后的相似度一个较小的权重（如0.3）
+    final_similarity = original_similarity * 0.7 + sorted_similarity * 0.3
+    
+    return final_similarity
 
 # 选择每个聚类的代表词
 def select_representative(cluster):

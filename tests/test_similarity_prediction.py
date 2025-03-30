@@ -134,15 +134,7 @@ def test_similarity_based_prediction():
     test_data = pd.concat([val_data, non_allusion_data], ignore_index=True)
     
     # 统计变量
-    total_allusion_cases = 0
-    correct_allusion_cases = 0
-    total_non_allusion_cases = 0
-    correct_non_allusion_cases = 0
-    false_positive_count = 0
-    false_negative_count = 0
-    
-    all_true_labels = []
-    all_pred_labels = []
+    overall_stats = {'TP': 0, 'FP': 0, 'FN': 0, 'TN': 0}
     
     # 处理每个样本
     for _, row in test_data.iterrows():
@@ -182,38 +174,56 @@ def test_similarity_based_prediction():
                 vote_ratio_threshold=0.3
             )
             
-            # 记录预测结果
-            all_true_labels.append(true_allusion)
-            all_pred_labels.append(predicted_allusion if is_valid else "O")
-            
-            # 统计准确率
+            # 确定预测类型
+            pred_type = ""
             if true_allusion == "O":
-                total_non_allusion_cases += 1
                 if not is_valid:
-                    correct_non_allusion_cases += 1
+                    pred_type = "TN"
+                    overall_stats["TN"] += 1
                 else:
-                    false_positive_count += 1
+                    pred_type = "FP"
+                    overall_stats["FP"] += 1
             else:
-                total_allusion_cases += 1
                 if is_valid and predicted_allusion == true_allusion:
-                    correct_allusion_cases += 1
+                    pred_type = "TP"
+                    overall_stats["TP"] += 1
                 elif not is_valid:
-                    false_negative_count += 1
+                    pred_type = "FN"
+                    overall_stats["FN"] += 1
+                else:
+                    pred_type = "FP+FN"
+                    overall_stats["FP"] += 1
+                    overall_stats["FN"] += 1
+            
+            # 打印样本信息
+            print("\n=== 样本详情 ===")
+            print(f"诗句: {sentence}")
+            print(f"位置: [{start}, {end}]")
+            print(f"真实典故: {true_allusion}")
+            print(f"预测典故: {predicted_allusion if is_valid else 'O'}")
+            print(f"预测类型: {pred_type}")
+            print(f"相似度: {similarity:.4f}")
+            if vote_stats:  # 添加检查以确保 vote_stats 不为空
+                print(f"总特征数: {vote_stats['total_features']}")
+                print(f"投票比例: {vote_stats['votes'][predicted_allusion]['count'] / vote_stats['total_features']:.4f}" if predicted_allusion else "投票比例: 0.0000")
     
-    # 输出详细统计结果
-    print("\n=== 准确率统计 ===")
-    print(f"典故识别准确率: {correct_allusion_cases/total_allusion_cases:.4f} ({correct_allusion_cases}/{total_allusion_cases})" if total_allusion_cases > 0 else "无典故样本")
-    print(f"非典故识别准确率: {correct_non_allusion_cases/total_non_allusion_cases:.4f} ({correct_non_allusion_cases}/{total_non_allusion_cases})" if total_non_allusion_cases > 0 else "无非典故样本")
-    print(f"整体准确率: {(correct_allusion_cases + correct_non_allusion_cases)/(total_allusion_cases + total_non_allusion_cases):.4f}")
+    # 计算整体指标
+    tp = overall_stats['TP']
+    fp = overall_stats['FP']
+    fn = overall_stats['FN']
+    tn = overall_stats['TN']
     
-    if total_non_allusion_cases > 0:
-        print(f"\n误报率: {false_positive_count/total_non_allusion_cases:.4f} ({false_positive_count}/{total_non_allusion_cases})")
-    if total_allusion_cases > 0:
-        print(f"漏报率: {false_negative_count/total_allusion_cases:.4f} ({false_negative_count}/{total_allusion_cases})")
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+    f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+    accuracy = (tp + tn) / (tp + tn + fp + fn) if (tp + tn + fp + fn) > 0 else 0
     
-    # 输出详细分类报告
-    print("\n=== 分类报告 ===")
-    print(classification_report(all_true_labels, all_pred_labels))
+    print("\n=== 整体评估指标 ===")
+    print(f"准确率 (Precision): {precision:.4f}")
+    print(f"召回率 (Recall): {recall:.4f}")
+    print(f"F1 分数: {f1:.4f}")
+    print(f"Accuracy: {accuracy:.4f}")
+
 
 if __name__ == "__main__":
     test_similarity_based_prediction()

@@ -96,10 +96,15 @@ def evaluate_single_poem(model, dataloader, device, id2type_label):
             'false_negatives': 0,  # 真实典故未被完全正确预测
             'false_positives': 0,  # 预测出的错误典故
         },
+        'type_only': {           # 新增：仅考虑类型的统计
+            'true_positives': 0,  # 类型预测正确
+            'false_negatives': 0,  # 类型预测错误
+            'false_positives': 0,  # 多余的预测
+        },
         'relaxed': {
-            'position_iou': [],  # 存储所有重叠典故的IOU
-            'type_correct': 0,   # 重叠典故中类型正确的数量
-            'type_total': 0,     # 重叠典故的总数
+            'position_iou': [],
+            'type_correct': 0,
+            'type_total': 0,
         }
     }
     
@@ -208,10 +213,15 @@ def evaluate_single_poem(model, dataloader, device, id2type_label):
                         'false_negatives': 0,  # 真实典故未被完全正确预测
                         'false_positives': 0,  # 预测出的错误典故
                     },
+                    'type_only': {           # 新增：仅考虑类型的统计
+                        'true_positives': 0,  # 类型预测正确
+                        'false_negatives': 0,  # 类型预测错误
+                        'false_positives': 0,  # 多余的预测
+                    },
                     'relaxed': {
-                        'position_iou': [],  # 存储所有重叠典故的IOU
-                        'type_correct': 0,   # 重叠典故中类型正确的数量
-                        'type_total': 0,     # 重叠典故的总数
+                        'position_iou': [],
+                        'type_correct': 0,
+                        'type_total': 0,
                     }
                 }
                 
@@ -236,7 +246,37 @@ def evaluate_single_poem(model, dataloader, device, id2type_label):
                 # 预测错误的典故算作FP
                 metrics['strict']['false_positives'] = len(pred_allusions) - len(matched_pred)
                 
-                # 2. 模型能力评估（放宽条件的统计）
+                # 2. 仅类型匹配统计（新增）
+                true_types = [t[2] for t in true_allusions]  # 获取所有真实类型
+                pred_types = [p[2] for p in pred_allusions]  # 获取所有预测类型
+                
+                # 初始化匹配状态
+                true_matched = [False] * len(true_types)
+                pred_matched = [False] * len(pred_types)
+                
+                # 首先匹配相同的类型
+                for i, true_type in enumerate(true_types):
+                    for j, pred_type in enumerate(pred_types):
+                        if not pred_matched[j] and not true_matched[i] and true_type == pred_type:
+                            metrics['type_only']['true_positives'] += 1
+                            true_matched[i] = True
+                            pred_matched[j] = True
+                
+                # 计算未匹配数量
+                unmatched_true = sum(1 for m in true_matched if not m)  # 未匹配的真实典故数量
+                unmatched_pred = sum(1 for m in pred_matched if not m)  # 未匹配的预测典故数量
+                
+                
+                # 按照规则处理未匹配的情况
+                if unmatched_true > 0:
+                    # 将未匹配的真实典故数量作为 FN
+                    metrics['type_only']['false_negatives'] += unmatched_true
+                    
+                # 如果还有多余的未匹配预测，将其计为 FP
+                if unmatched_pred > 0:
+                    metrics['type_only']['false_positives'] += max(unmatched_pred - unmatched_true, 0)
+                
+                # 3. 模型能力评估（放宽条件的统计）
                 matched_true = set()  # 重置匹配记录
                 matched_pred = set()
                 
@@ -266,12 +306,10 @@ def evaluate_single_poem(model, dataloader, device, id2type_label):
                             matched_pred.add(pred_idx)
                 
                 # 更新总统计
-                total_metrics['strict']['true_positives'] += metrics['strict']['true_positives']
-                total_metrics['strict']['false_negatives'] += metrics['strict']['false_negatives']
-                total_metrics['strict']['false_positives'] += metrics['strict']['false_positives']
-                total_metrics['relaxed']['position_iou'].extend(metrics['relaxed']['position_iou'])
-                total_metrics['relaxed']['type_correct'] += metrics['relaxed']['type_correct']
-                total_metrics['relaxed']['type_total'] += metrics['relaxed']['type_total']
+                for metric_type in ['strict', 'type_only']:
+                    total_metrics[metric_type]['true_positives'] += metrics[metric_type]['true_positives']
+                    total_metrics[metric_type]['false_negatives'] += metrics[metric_type]['false_negatives']
+                    total_metrics[metric_type]['false_positives'] += metrics[metric_type]['false_positives']
                 
                 # 记录错误情况
                 if len(matched_true) < len(true_allusions) or len(matched_pred) < len(pred_allusions):
@@ -317,15 +355,15 @@ def evaluate_single_poem(model, dataloader, device, id2type_label):
             f.write(f"误检典故：{[(start, end, type_name, conf) for start, end, type_name, conf in error_info['false_positives']]}\n")
             f.write("\n" + "="*50 + "\n\n")
             
-    # 处理错误样本
-    print("\n处理错误样本...")
-    test_file = os.path.join(DATA_DIR, 'test_data.csv')
-    process_error_samples(
-        error_analysis=error_analysis,  # 这是evaluate_single_poem函数中收集的错误分析
-        input_file=test_file,
-        output_file=os.path.join(DATA_DIR, 'test_data_processed3.csv'),
-        remove_prob=0.5
-    )
+    # # 处理错误样本
+    # print("\n处理错误样本...")
+    # test_file = os.path.join(DATA_DIR, 'test_data.csv')
+    # process_error_samples(
+    #     error_analysis=error_analysis,  # 这是evaluate_single_poem函数中收集的错误分析
+    #     input_file=test_file,
+    #     output_file=os.path.join(DATA_DIR, 'test_data_processed3.csv'),
+    #     remove_prob=0.5
+    # )
     
     # 计算最终指标
     # 1. 严格指标
@@ -338,7 +376,24 @@ def evaluate_single_poem(model, dataloader, device, id2type_label):
     strict_f1 = (2 * strict_precision * strict_recall / (strict_precision + strict_recall)
                 if (strict_precision + strict_recall) > 0 else 0)
     
-    # 2. 放宽条件的指标
+    # 2. 仅类型指标
+    type_only_precision = (total_metrics['type_only']['true_positives'] / 
+                         (total_metrics['type_only']['true_positives'] + 
+                          total_metrics['type_only']['false_positives'])
+                         if (total_metrics['type_only']['true_positives'] + 
+                             total_metrics['type_only']['false_positives']) > 0 else 0)
+    
+    type_only_recall = (total_metrics['type_only']['true_positives'] / 
+                      (total_metrics['type_only']['true_positives'] + 
+                       total_metrics['type_only']['false_negatives'])
+                      if (total_metrics['type_only']['true_positives'] + 
+                          total_metrics['type_only']['false_negatives']) > 0 else 0)
+    
+    type_only_f1 = (2 * type_only_precision * type_only_recall / 
+                   (type_only_precision + type_only_recall)
+                   if (type_only_precision + type_only_recall) > 0 else 0)
+    
+    # 3. 放宽条件的指标
     avg_iou = (sum(total_metrics['relaxed']['position_iou']) / len(total_metrics['relaxed']['position_iou'])
               if total_metrics['relaxed']['position_iou'] else 0)
     type_accuracy = (total_metrics['relaxed']['type_correct'] / total_metrics['relaxed']['type_total']
@@ -352,6 +407,14 @@ def evaluate_single_poem(model, dataloader, device, id2type_label):
             'true_positives': total_metrics['strict']['true_positives'],
             'false_positives': total_metrics['strict']['false_positives'],
             'false_negatives': total_metrics['strict']['false_negatives'],
+        },
+        'type_only': {
+            'precision': type_only_precision,
+            'recall': type_only_recall,
+            'f1': type_only_f1,
+            'true_positives': total_metrics['type_only']['true_positives'],
+            'false_positives': total_metrics['type_only']['false_positives'],
+            'false_negatives': total_metrics['type_only']['false_negatives'],
         },
         'relaxed': {
             'avg_iou': avg_iou,
@@ -416,6 +479,13 @@ def main():
         print(f"严格指标 - true_positives: {results['strict']['true_positives']}")
         print(f"严格指标 - false_negatives: {results['strict']['false_negatives']}")
         print(f"严格指标 - false_positives: {results['strict']['false_positives']}")
+        
+        print(f"仅类型指标 - 准确率: {results['type_only']['precision']:.4f}")
+        print(f"仅类型指标 - 召回率: {results['type_only']['recall']:.4f}")
+        print(f"仅类型指标 - F1分数: {results['type_only']['f1']:.4f}")
+        print(f"仅类型指标 - true_positives: {results['type_only']['true_positives']}")
+        print(f"仅类型指标 - false_negatives: {results['type_only']['false_negatives']}")
+        print(f"仅类型指标 - false_positives: {results['type_only']['false_positives']}")
         
         print(f"放宽条件 - 平均IOU: {results['relaxed']['avg_iou']:.4f}")
         print(f"放宽条件 - 类型准确率: {results['relaxed']['type_accuracy']:.4f}")

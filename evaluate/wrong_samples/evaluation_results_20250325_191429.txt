@@ -1,0 +1,31 @@
+=== Joint Evaluation Results ===
+Average Loss: 3.9739
+Position Loss: 3.4353
+Type Loss: 4.5124
+
+Position Recognition:
+  Overall:
+    Precision: 0.7959
+    Recall: 0.8392
+    F1: 0.8170
+  B Label:
+    Precision: 0.8011
+    Recall: 0.8433
+    F1: 0.8217
+    TP: 1281, FP: 318, FN: 238
+  I Label:
+    Precision: 0.7923
+    Recall: 0.8363
+    F1: 0.8137
+    TP: 1839, FP: 482, FN: 360
+  O Label:
+    Precision: 0.9685
+    Recall: 0.9566
+    F1: 0.9625
+    TP: 15683, FP: 510, FN: 712
+
+Type Recognition:
+  Top-1 Accuracy: 0.9012
+  Top-3 Accuracy: 0.9772
+  Top-5 Accuracy: 0.9827
+  Negative Accuracy: 0.9430
