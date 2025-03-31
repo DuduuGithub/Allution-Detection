@@ -1,3 +1,7 @@
+'''
+    输入诗句，输出典故特征提取结果
+'''
+
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -5,11 +9,6 @@ import pandas as pd
 import torch
 from difflib import SequenceMatcher
 from model.config import OPTIMAL_EPS
-
-'''
-    输入诗句，输出典故特征提取结果
-'''
-
 
 def prepare_sparse_features(batch_texts, allusion_dict, max_active=5):
     """将文本批量转换为稀疏特征格式

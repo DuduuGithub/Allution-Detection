@@ -1,3 +1,7 @@
+'''
+    统计生成的代表词识别出的异形词的准确率
+'''
+
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -10,11 +14,6 @@ from tqdm import tqdm
 
 from process.process_config import OPTIMAL_EPS
 from process.clustering import load_allusion_data
-
-'''
-    统计生成的代表词识别出的异形词的准确率
-'''
-
 
 def load_representative_dict(file_path='data/allusion_type.csv'):
     """加载代表词字典"""

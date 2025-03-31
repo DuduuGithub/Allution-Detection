@@ -1,5 +1,5 @@
 '''
-    测试给出target_position,根据字典特征提取结果进行结果判断的效果，同时观测top1 top3 top5的效果。被添加为实验3
+    消融实验。测试给出target_position,根据字典特征提取结果进行结果判断的效果，同时观测top1 top3 top5的效果
 '''
 
 import sys

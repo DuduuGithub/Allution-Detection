@@ -1,3 +1,7 @@
+'''
+    测试给出target_position,仅仅进行相似度判别的准确性与误报率。仅看top1
+'''
+
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -10,12 +14,6 @@ from model.train import load_allusion_dict
 from collections import defaultdict
 from sklearn.metrics import classification_report
 import random
-
-'''
-    测试给出target_position,仅仅进行相似度判别的准确性与误报率
-'''
-
-
 
 def vote_for_allusion(features, start, end, id_to_allusion, similarity_threshold=0.5, vote_ratio_threshold=0.3):
     """

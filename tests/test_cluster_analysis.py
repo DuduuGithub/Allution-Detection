@@ -1,3 +1,6 @@
+'''
+    输入典故名，输出该典故的聚类结果
+'''
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -7,9 +10,7 @@ import pandas as pd
 from sklearn.cluster import DBSCAN
 import numpy as np
 from process.process_config import OPTIMAL_EPS,min_samples_size
-'''
-    输入典故名，输出该典故的聚类结果
-'''
+
 
 def load_allusion_data(file_path='data/updated_典故的异性数据.csv'):
     """加载原始典故数据"""
