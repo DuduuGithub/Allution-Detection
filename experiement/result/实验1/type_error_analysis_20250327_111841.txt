@@ -1,0 +1,14 @@
+
+
+Binned Frequency Distribution:
+Total errors: 109
+
+Training frequency 11-15: 57 errors (52.3%)
+Training frequency 16-25: 25 errors (22.9%)
+Training frequency 26-40: 10 errors (9.2%)
+Training frequency 41-60: 7 errors (6.4%)
+Training frequency 61-100: 4 errors (3.7%)
+Training frequency >100: 6 errors (5.5%)
+
+Visualization File:
+Binned Frequency Distribution Plot: frequency_distribution_binned_20250327_111841.png

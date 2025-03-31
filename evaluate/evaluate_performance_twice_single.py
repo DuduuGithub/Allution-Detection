@@ -1,3 +1,8 @@
+'''
+    分别评估 单独训练位置和类型识别模型
+'''
+
+
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

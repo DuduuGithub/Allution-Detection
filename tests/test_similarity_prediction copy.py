@@ -12,7 +12,7 @@ from sklearn.metrics import classification_report
 import random
 
 '''
-    测试给出target_position,仅仅进行相似度判别的准确性与误报率
+    测试给出target_position,根据字典特征提取结果进行结果判断的效果
 '''
 
 
