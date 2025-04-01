@@ -2,9 +2,9 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from model_for_new_study.poetry_dataset import PoetryNERDataset
-from model_for_new_study.bert_crf import AllusionBERTCRF, prepare_sparse_features
-from model_for_new_study.config import (
+from model.poetry_dataset import PoetryNERDataset
+from model.bert_crf import AllusionBERTCRF, prepare_sparse_features
+from model.config import (
     BERT_MODEL_PATH, MAX_SEQ_LEN, BATCH_SIZE, 
     POSITION_EPOCHS, TYPE_EPOCHS, LEARNING_RATE,
     SAVE_DIR, DATA_DIR, ALLUSION_DICT_PATH
