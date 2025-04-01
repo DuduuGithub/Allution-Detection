@@ -1,17 +1,41 @@
-import torch
-from torch.utils.data import DataLoader
-from transformers import BertTokenizer, get_linear_schedule_with_warmup
-from torch.optim import AdamW
-from poetry_dataset import PoetryNERDataset
-from bert_crf import AllusionBERTCRF, prepare_sparse_features
+import sys
 import os
-from config import (
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from model.poetry_dataset import PoetryNERDataset
+from model.bert_crf import AllusionBERTCRF, prepare_sparse_features
+from model.config import (
     BERT_MODEL_PATH, MAX_SEQ_LEN, BATCH_SIZE, 
-    POSITION_EPOCHS, TYPE_EPOCHS, LEARNING_RATE,
+    EPOCHS,
     SAVE_DIR, DATA_DIR, ALLUSION_DICT_PATH
 )
+import torch
+from torch.utils.data import DataLoader
+from transformers import BertTokenizer, get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup
+from torch.optim import AdamW
 import argparse
 import pandas as pd
+from datetime import datetime
+import math
+
+
+# # 定义加权得分计算函数
+# def calculate_weighted_score(metrics, w1=0.4, w2=0.4, w3=0.2):
+#     """
+#     计算加权得分
+#     :param metrics: 评估指标字典
+#     :param w1: B/I 标签准确率的权重
+#     :param w2: B/I 标签召回率的权重
+#     :param w3: 类别识别任务准确率的权重
+#     :return: 加权得分
+#     """
+#     precision_bi = (metrics["position"]["B"]["precision"] + metrics["position"]["I"]["precision"]) / 2
+#     recall_bi = (metrics["position"]["B"]["recall"] + metrics["position"]["I"]["recall"]) / 2
+#     top1_accuracy = metrics["type"]["top1_acc"]
+#     weighted_score = w1 * precision_bi + w2 * recall_bi + w3 * top1_accuracy
+#     return weighted_score
+
+
 
 def load_allusion_dict(dict_file=ALLUSION_DICT_PATH):
     """加载典故词典并创建类型映射
@@ -34,7 +58,7 @@ def load_allusion_dict(dict_file=ALLUSION_DICT_PATH):
         allusion = row['allusion']
     
         # 处理变体列表
-        variants = eval(row['representatives'])  # 安全地解析字符串列表
+        variants = eval(row['variation_list'])  # 安全地解析字符串列表
         
         # 添加到典故词典
         allusion_dict[allusion] = variants
@@ -60,154 +84,547 @@ def load_allusion_dict(dict_file=ALLUSION_DICT_PATH):
     
     return allusion_dict, type_label2id, id2type_label, num_types
 
+def calculate_metrics(position_correct, position_pred_total, position_true_total,
+                     type_correct, type_pred_total, type_true_total,
+                     type_top3_correct, type_top5_correct):
+    """计算评估指标
+    
+    Args:
+        position_correct (int): 位置预测正确的数量
+        position_pred_total (int): 位置预测的总数量
+        position_true_total (int): 位置真实的总数量
+        type_correct (int): 类型预测正确的数量
+        type_pred_total (int): 类型预测的总数量
+        type_true_total (int): 类型真实的总数量
+        type_top3_correct (int): Top-3正确的数量
+        type_top5_correct (int): Top-5正确的数量
+    
+    Returns:
+        dict: 包含各项评估指标的字典
+    """
+    # 计算位置识别的指标
+    position_precision = position_correct / position_pred_total if position_pred_total > 0 else 0
+    position_recall = position_correct / position_true_total if position_true_total > 0 else 0
+    position_f1 = 2 * (position_precision * position_recall) / (position_precision + position_recall) \
+                 if (position_precision + position_recall) > 0 else 0
+
+    # 计算类型识别的指标
+    type_precision = type_correct / type_pred_total if type_pred_total > 0 else 0
+    type_recall = type_correct / type_true_total if type_true_total > 0 else 0
+    type_f1 = 2 * (type_precision * type_recall) / (type_precision + type_recall) \
+              if (type_precision + type_recall) > 0 else 0
+    
+    # 计算Top-k准确率
+    type_top3_acc = type_top3_correct / type_true_total if type_true_total > 0 else 0
+    type_top5_acc = type_top5_correct / type_true_total if type_true_total > 0 else 0
+
+    return {
+        'position': {
+            'precision': position_precision,
+            'recall': position_recall,
+            'f1': position_f1
+        },
+        'type': {
+            'precision': type_precision,
+            'recall': type_recall,
+            'f1': type_f1,
+            'top3_acc': type_top3_acc,
+            'top5_acc': type_top5_acc
+        }
+    }
+
+def evaluate_metrics_from_outputs(outputs, labels):
+    """使用已有的预测结果和标签计算评估指标"""
+    position_correct = 0
+    position_pred_total = 0
+    position_true_total = 0
+    
+    # B/I/O标签的统计
+    b_tp, b_fp, b_fn = 0, 0, 0  # B标签的true positive, false positive, false negative
+    i_tp, i_fp, i_fn = 0, 0, 0  # I标签的统计
+    o_tp, o_fp, o_fn = 0, 0, 0  # O标签的统计
+    
+    #类别统计
+    type_positive_correct = 0
+    type_positive_total = 0
+    type_positive_top3_correct = 0
+    type_positive_top5_correct = 0
+    
+    # 添加负例统计
+    type_negative_total = 0      # 总负例数
+    type_negative_correct = 0    # 正确预测的负例数
+    
+    # 错误统计
+    type_mistake_positive_to_negative = 0
+    type_mistake_negative_to_positive = 0
+    
+    for batch_outputs, batch_labels in zip(outputs, labels):
+        
+        # 位置识别统计
+        pred_positions = batch_outputs['position_predictions']
+        true_positions = batch_labels['position_labels']
+        attention_mask = batch_labels['attention_mask']
+        
+        for pred, true, mask in zip(pred_positions, true_positions, attention_mask):
+            seq_len = mask.sum().item() - 2
+            true = true[1:seq_len+1]
+            
+            # 统计B/I/O标签
+            for p, t in zip(pred, true):
+                # B标签统计
+                if t == 1:  # 真实标签是B
+                    if p == 1: b_tp += 1
+                    else: b_fn += 1
+                if p == 1:  # 预测标签是B
+                    if t != 1: b_fp += 1
+                
+                # I标签统计
+                if t == 2:  # 真实标签是I
+                    if p == 2: i_tp += 1
+                    else: i_fn += 1
+                if p == 2:  # 预测标签是I
+                    if t != 2: i_fp += 1
+                
+                # O标签统计
+                if t == 0:  # 真实标签是O
+                    if p == 0: o_tp += 1
+                    else: o_fn += 1
+                if p == 0:  # 预测标签是O
+                    if t != 0: o_fp += 1
+            
+            # 原有的位置统计
+            position_pred_total += sum(1 for p in pred if p > 0)
+            position_true_total += sum(1 for t in true if t > 0)
+            position_correct += sum(1 for p, t in zip(pred, true) if p == t and p > 0)
+        
+        # 类型识别统计
+        type_labels = batch_labels['type_labels']
+        type_predictions = batch_outputs['type_predictions']
+        
+        # 确保预测结果和标签数量匹配
+        for pred_info,type_label in zip(type_predictions,type_labels):
+            _,_,pred_types = pred_info  # 解包预测结果
+            # 获取预测的类型（top1-5）
+            pred_type_ids = [p[0] for p in pred_types]
+            
+            #正例
+            if type_label > 0:  
+                type_positive_total += 1
+                # 检查top1准确率
+                if pred_type_ids[0] == type_label:
+                    type_positive_correct += 1
+                    
+                # 检查top3准确率
+                if type_label in pred_type_ids[:3]:
+                    type_positive_top3_correct += 1
+                    
+                # 检查top5准确率
+                if type_label in pred_type_ids[:5]:
+                    type_positive_top5_correct += 1
+                
+                else:
+                    type_mistake_positive_to_negative += 1
+            
+            #负例
+            else:
+                type_negative_total += 1
+                if pred_type_ids[0] == 0:  # 正确预测为非典故
+                    type_negative_correct += 1
+                else:
+                    type_mistake_negative_to_positive += 1
+    
+    # 计算评估指标
+    def calculate_label_metrics(tp, fp, fn):
+        precision = tp / (tp + fp) if tp + fp > 0 else 0
+        recall = tp / (tp + fn) if tp + fn > 0 else 0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
+        return precision, recall, f1
+    
+    # 计算B/I/O标签的指标
+    b_precision, b_recall, b_f1 = calculate_label_metrics(b_tp, b_fp, b_fn)
+    i_precision, i_recall, i_f1 = calculate_label_metrics(i_tp, i_fp, i_fn)
+    o_precision, o_recall, o_f1 = calculate_label_metrics(o_tp, o_fp, o_fn)
+    
+    metrics = {
+        'position': {
+            'precision': position_correct / position_pred_total if position_pred_total > 0 else 0,
+            'recall': position_correct / position_true_total if position_true_total > 0 else 0,
+            'f1': 2 * position_correct / (position_pred_total + position_true_total) if (position_pred_total + position_true_total) > 0 else 0,
+            'B': {
+                'precision': b_precision,
+                'recall': b_recall,
+                'f1': b_f1,
+                'tp': b_tp,
+                'fp': b_fp,
+                'fn': b_fn
+            },
+            'I': {
+                'precision': i_precision,
+                'recall': i_recall,
+                'f1': i_f1,
+                'tp': i_tp,
+                'fp': i_fp,
+                'fn': i_fn
+            },
+            'O': {
+                'precision': o_precision,
+                'recall': o_recall,
+                'f1': o_f1,
+                'tp': o_tp,
+                'fp': o_fp,
+                'fn': o_fn
+            }
+        },
+        'type': {
+            'raw_data':{
+                'positive_correct': type_positive_correct,
+                'positive_total': type_positive_total,
+                'positive_top3_correct': type_positive_top3_correct,
+                'positive_top5_correct': type_positive_top5_correct,
+                'negative_total': type_negative_total,
+                'negative_correct': type_negative_correct,
+                'mistake_positive_to_negative': type_mistake_positive_to_negative,
+                'mistake_negative_to_positive': type_mistake_negative_to_positive
+            },
+            
+            'top1_acc': type_positive_correct / type_positive_total if type_positive_total > 0 else 0,
+            'top3_acc': type_positive_top3_correct / type_positive_total if type_positive_total > 0 else 0,
+            'top5_acc': type_positive_top5_correct / type_positive_total if type_positive_total > 0 else 0,
+            'negative_acc': type_negative_correct / type_negative_total if type_negative_total > 0 else 0,
+            'mistake': {
+                'positive_to_negative': type_mistake_positive_to_negative/type_positive_total if type_positive_total > 0 else 0,
+                'negative_to_positive': type_mistake_negative_to_positive/type_negative_total if type_negative_total > 0 else 0
+            }
+        }
+    }
+    
+    return metrics
+
+
+
+    
 def train_model(model, train_dataloader, val_dataloader, optimizer, scheduler, 
-                device, num_epochs, save_dir, task, allusion_dict):
+                device, num_epochs, save_dir,
+                id2type_label=None):
+    """
+    联合训练模型
+    Args:
+        model: 模型
+        train_dataloader: 训练数据加载器
+        val_dataloader: 验证数据加载器
+        optimizer: 优化器
+        scheduler: 学习率调度器
+        device: 设备
+        num_epochs: 训练轮数
+        save_dir: 模型保存目录
+        position_weight: 联合训练中位置任务的权重 (0-1之间)
+        bi_label_weight: B/I标签相对于O标签的权重
+        id2type_label: 类型标签id到名称的映射字典
+    """
+    # 创建日志文件
+    log_file = os.path.join(save_dir, f'training_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
     best_val_loss = float('inf')
     
-    # 日志文件
-    train_log_file = os.path.join(save_dir, f'train_loss_{task}.txt')
-    val_log_file = os.path.join(save_dir, f'val_loss_{task}.txt')
+    def log_message(message):
+        """同时写入文件和打印到控制台"""
+        print(message)
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(message + '\n')
+    log_message(f"这是正则化损失后的测试，将positionweight为{model.position_weight:.4f}，bi_label_weight为{model.bi_label_weight.item():.4f}")
+    log_message(f"Starting training with {num_epochs} epochs")
+    log_message(f"Training samples: {len(train_dataloader.dataset)}")
+    log_message(f"Validation samples: {len(val_dataloader.dataset)}")
+        
+    # 初始化早停机制相关变量
+    best_weighted_score = -1  # 最佳加权得分
+    patience = 4  # 最大耐心值
+    patience_counter = 0  # 耐心计数器
+    early_stop = False  # 是否触发早停
     
     for epoch in range(num_epochs):
+        # # 动态调整权重
+        # position_weight = 0.4 - (0.4 - 0.15) * (epoch / num_epochs)
+        # model.position_weight.data = torch.tensor(position_weight, device=device)
+        
+        
+        # # 可以根据需要动态调整权重
+        # if epoch <= 2:
+        #     model.position_weight.data = torch.tensor(position_weight, device=device)
+        # elif epoch <= 4:
+        #     model.position_weight.data = torch.tensor(0.2, device=device)
+        # else:
+        #     model.position_weight.data = torch.tensor(0.15, device=device)
+        log_message(f"Epoch {epoch+1}/{num_epochs}")
+        log_message(f"Position Weight (Joint Loss): {model.position_weight:.4f}")
+        log_message(f"B/I Label Weight: {model.bi_label_weight.item():.4f}")
+        
         # 训练阶段
         model.train()
-        total_loss = 0
+        total_train_loss = 0
+        total_train_position_loss = 0
+        total_train_type_loss = 0
+        
         for batch_idx, batch in enumerate(train_dataloader):
-            
+            # 准备数据
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
+            position_labels = batch['position_labels'].to(device)
+            target_positions = batch['target_positions'].to(device)
+            type_labels = batch['type_labels'].to(device)
             
-            # 生成字典特征
-            texts = batch['text']  
-            dict_features = prepare_sparse_features(texts, allusion_dict)
             dict_features = {
-                k: v.to(device) for k, v in dict_features.items()
+                'indices': batch['dict_features']['indices'].to(device),
+                'values': batch['dict_features']['values'].to(device),
+                'active_counts': batch['dict_features']['active_counts'].to(device)
             }
+            # 在打印前临时设置
+            # print('text:',batch['text'])
+            # print("Position labels:")
+            # print(batch['position_labels'])
+            # print("\nTarget positions:")
+            # print(batch['target_positions'])
+            # print("\nType labels:")
+            # print(batch['type_labels'])
             
+            # 计算损失
+            outputs = model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                dict_features=dict_features,
+                position_labels=position_labels,
+                target_positions=target_positions,
+                type_labels=type_labels,
+                train_mode=True
+            )
+            
+            loss = outputs['loss']
+            
+            # 反向传播
             optimizer.zero_grad()
-            
-            if task == 'position':
-                position_labels = batch['position_labels'].to(device)
-                loss = model(
-                    input_ids=input_ids, 
-                    attention_mask=attention_mask,
-                    dict_features=dict_features,
-                    task='position',
-                    position_labels=position_labels
-                )
-            else:  # task == 'type'
-                type_labels = batch['type_labels'].to(device)
-                target_positions = batch['target_positions'].to(device)
-                loss = model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    dict_features=dict_features,
-                    task='type',
-                    target_positions=target_positions,
-                    type_labels=type_labels
-                )
-            
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             scheduler.step()
             
-            total_loss += loss.item()
+            # 累计损失
+            total_train_loss += loss.item()
+            total_train_position_loss += outputs['position_loss']
+            total_train_type_loss += outputs['type_loss']
             
-            if (batch_idx + 1) % 1 == 0:
-                
-                print(f'Epoch {epoch+1}, Batch {batch_idx+1}, Loss: {loss.item():.4f}')
+            # 每100个batch输出一次进度
+            if (batch_idx + 1) % 100 == 0:
+                log_message(f'Epoch {epoch+1}/{num_epochs} - Batch {batch_idx+1}/{len(train_dataloader)}:')
+                log_message(f'  Position Loss: {outputs["position_loss"]:.4f}')
+                log_message(f'  Type Loss: {outputs["type_loss"]:.4f}')
+                log_message(f'  Total Loss: {loss.item():.4f}')
+                log_message(f'  Position Weight: {model.position_weight:.4f}')
+                log_message(f'  B/I Label Weight: {model.bi_label_weight.item():.4f}')
         
-        avg_train_loss = total_loss / len(train_dataloader)
+        # 计算平均训练损失
+        avg_train_loss = total_train_loss / len(train_dataloader)
+        avg_train_position_loss = total_train_position_loss / len(train_dataloader)
+        avg_train_type_loss = total_train_type_loss / len(train_dataloader)
         
         # 验证阶段
         model.eval()
-        val_loss = 0
-        total_correct = 0
-        total_samples = 0
+        total_val_loss = 0
+        total_val_position_loss = 0
+        total_val_type_loss = 0
+        
+        # 收集验证数据用于评估
+        all_val_outputs = []
+        all_val_labels = []
         
         with torch.no_grad():
             for batch in val_dataloader:
                 input_ids = batch['input_ids'].to(device)
                 attention_mask = batch['attention_mask'].to(device)
+                position_labels = batch['position_labels'].to(device)
+                target_positions = batch['target_positions'].to(device)
+                type_labels = batch['type_labels'].to(device)
                 
-                # 生成字典特征
-                texts = batch['text']
-                dict_features = prepare_sparse_features(texts, allusion_dict)
-                dict_features = {
-                    k: v.to(device) for k, v in dict_features.items()
-                }
+                dict_features = {k: v.to(device) for k, v in batch['dict_features'].items()}
                 
-                if task == 'position':
-                    position_labels = batch['position_labels'].to(device)
-                    # 获取损失和预测结果
-                    loss, predictions = model(
-                        input_ids=input_ids,
-                        attention_mask=attention_mask,
-                        dict_features=dict_features,
-                        task='position',
-                        position_labels=position_labels,
-                        return_predictions=True
-                    )
-                    # 计算准确率（忽略填充标记）
-                    mask = attention_mask.bool()
-                    correct = ((predictions == position_labels) & mask).sum().item()
-                    total = mask.sum().item()
-                    
-                else:  # task == 'type'
-                    type_labels = batch['type_labels'].to(device)
-                    target_positions = batch['target_positions'].to(device)
-                    # 获取损失和预测结果
-                    loss, predictions = model(
-                        input_ids=input_ids,
-                        attention_mask=attention_mask,
-                        dict_features=dict_features,
-                        task='type',
-                        target_positions=target_positions,
-                        type_labels=type_labels,
-                        return_predictions=True
-                    )
-                    # 计算准确率
-                    correct = (predictions == type_labels).sum().item()
-                    total = len(type_labels)
+                # 1. 计算损失（使用所有标签）
+                loss_outputs = model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    dict_features=dict_features,
+                    position_labels=position_labels,
+                    target_positions=target_positions,
+                    type_labels=type_labels,
+                    train_mode=True #训练模式下才返回损失
+                )
                 
-                val_loss += loss.item()
-                total_correct += correct
-                total_samples += total
+                # 累计损失
+                total_val_loss += loss_outputs['loss'].item()
+                total_val_position_loss += loss_outputs['position_loss']
+                total_val_type_loss += loss_outputs['type_loss']
+                
+                # 2. 获取预测
+                position_pred_outputs = model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    dict_features=dict_features,
+                    train_mode=False,
+                    task='position'
+                )
+                type_pred_outputs = model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    dict_features=dict_features,
+                    target_positions=target_positions,
+                    train_mode=False,
+                    task='type'
+                )
+                
+                cleaned_type_labels = []
+                batch_size = type_labels.size(0)
+                max_type_len = type_labels.size(1)
+                # 清理type_labels
+                for batch_idx in range(batch_size):
+                    for type_idx in range(max_type_len):
+                        if target_positions[batch_idx][type_idx].sum() > 0:  # 跳过填充的位置
+                            cleaned_type_labels.append(type_labels[batch_idx][type_idx])
+                                
+                all_val_outputs.append({
+                    'position_predictions': position_pred_outputs['position_predictions'],
+                    'type_predictions': type_pred_outputs['type_predictions']
+                })
+                
+                all_val_labels.append({
+                    'position_labels': position_labels,
+                    'type_labels': cleaned_type_labels, # 清理后的标签 [batch_all_nums]
+                    'attention_mask': attention_mask
+                })
         
-        avg_val_loss = val_loss / len(val_dataloader)
-        accuracy = total_correct / total_samples * 100
+        # 计算平均验证损失
+        avg_val_loss = total_val_loss / len(val_dataloader)
+        avg_val_position_loss = total_val_position_loss / len(val_dataloader)
+        avg_val_type_loss = total_val_type_loss / len(val_dataloader)
         
-        # 保存训练和验证损失
-        with open(train_log_file, 'a', encoding='utf-8') as f:
-            f.write(f'Epoch {epoch+1}: {avg_train_loss:.4f}\n')
+        # 使用收集的数据计算评估指标
+        metrics = evaluate_metrics_from_outputs(all_val_outputs, all_val_labels)
         
-        with open(val_log_file, 'a', encoding='utf-8') as f:
-            f.write(f'Epoch {epoch+1}: {avg_val_loss:.4f}, Accuracy: {accuracy:.2f}%\n')
+        # # 计算加权得分
+        # weighted_score = calculate_weighted_score(metrics)
         
-        print(f'Epoch {epoch+1}:')
-        print(f'Average training loss: {avg_train_loss:.4f}')
-        print(f'Average validation loss: {avg_val_loss:.4f}')
-        print(f'Validation accuracy: {accuracy:.2f}%')
+        # # 保存最佳模型（基于加权得分）
+        # if weighted_score >= best_weighted_score:
+        #     best_weighted_score = weighted_score
+        #     torch.save({
+        #         'epoch': epoch,
+        #         'model_state_dict': model.state_dict(),
+        #         'optimizer_state_dict': optimizer.state_dict(),
+        #         'loss': avg_val_loss,
+        #         'weighted_score': best_weighted_score,
+        #     }, os.path.join(save_dir, 'best_model.pt'))
+        #     log_message(f'Saved new best model with weighted score: {best_weighted_score:.4f}')
+        #     patience_counter = 0  # 重置耐心计数器
+        # else:
+        #     patience_counter += 1  # 增加耐心计数器
         
-        # 使用统一的模型保存文件名
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
+        # 保存最佳模型
+        if epoch >= 10:
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
-                'loss': best_val_loss,
-                'accuracy': accuracy,
-                'task': task,
-            }, os.path.join(save_dir, 'best_model.pt'))
+                'loss': avg_val_loss,
+                'weighted_score': best_weighted_score,
+            }, os.path.join(save_dir, f'best_model_epoch_{epoch}.pt'))
+            log_message(f'Saved new best model with epoch: {epoch:.4f}')
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--stage', type=str, choices=['position', 'type'], 
-                       required=True, help='Training stage: position or type')
-    args = parser.parse_args()
+        # 记录每个epoch的训练信息
+        log_message(f'\nEpoch {epoch+1}/{num_epochs} Summary:')
+        log_message(f'Training Loss:')
+        log_message(f'  Position Loss: {avg_train_position_loss:.4f}')
+        log_message(f'  Type Loss: {avg_train_type_loss:.4f}')
+        log_message(f'  Total Loss: {avg_train_loss:.4f}')
+        log_message(f'Validation Loss:')
+        log_message(f'  Position Loss: {avg_val_position_loss:.4f}')
+        log_message(f'  Type Loss: {avg_val_type_loss:.4f}')
+        log_message(f'  Total Loss: {avg_val_loss:.4f}')
+        
+        # 记录评估指标
+        log_message(f'\nPerformance Metrics:')
+        log_message(f'Position Recognition:')
+        log_message(f'  Overall:')
+        log_message(f'    Precision: {metrics["position"]["precision"]:.4f}')
+        log_message(f'    Recall: {metrics["position"]["recall"]:.4f}')
+        log_message(f'    F1: {metrics["position"]["f1"]:.4f}')
+        
+        # 添加BIO标签的详细信息
+        log_message(f'  B Label:')
+        log_message(f'    Precision: {metrics["position"]["B"]["precision"]:.4f}')
+        log_message(f'    Recall: {metrics["position"]["B"]["recall"]:.4f}')
+        log_message(f'    F1: {metrics["position"]["B"]["f1"]:.4f}')
+        log_message(f'    TP: {metrics["position"]["B"]["tp"]}, FP: {metrics["position"]["B"]["fp"]}, FN: {metrics["position"]["B"]["fn"]}')
+        
+        log_message(f'  I Label:')
+        log_message(f'    Precision: {metrics["position"]["I"]["precision"]:.4f}')
+        log_message(f'    Recall: {metrics["position"]["I"]["recall"]:.4f}')
+        log_message(f'    F1: {metrics["position"]["I"]["f1"]:.4f}')
+        log_message(f'    TP: {metrics["position"]["I"]["tp"]}, FP: {metrics["position"]["I"]["fp"]}, FN: {metrics["position"]["I"]["fn"]}')
+        
+        log_message(f'  O Label:')
+        log_message(f'    Precision: {metrics["position"]["O"]["precision"]:.4f}')
+        log_message(f'    Recall: {metrics["position"]["O"]["recall"]:.4f}')
+        log_message(f'    F1: {metrics["position"]["O"]["f1"]:.4f}')
+        log_message(f'    TP: {metrics["position"]["O"]["tp"]}, FP: {metrics["position"]["O"]["fp"]}, FN: {metrics["position"]["O"]["fn"]}')
+        
+        log_message(f'Type Recognition:')
+        log_message(f'  Top-1 Accuracy: {metrics["type"]["top1_acc"]:.4f}')
+        log_message(f'  Top-3 Accuracy: {metrics["type"]["top3_acc"]:.4f}')
+        log_message(f'  Top-5 Accuracy: {metrics["type"]["top5_acc"]:.4f}')
+        log_message(f'  Mistake:')
+        log_message(f'    Positive to Negative: {metrics["type"]["mistake"]["positive_to_negative"]:.4f}')
+        log_message(f'    Negative to Positive: {metrics["type"]["mistake"]["negative_to_positive"]:.4f}')
+        log_message(f'raw_data:')
+        log_message(f'    Positive Correct: {metrics["type"]["raw_data"]["positive_correct"]}')
+        log_message(f'    Positive Total: {metrics["type"]["raw_data"]["positive_total"]}')
+        log_message(f'    Positive Top3 Correct: {metrics["type"]["raw_data"]["positive_top3_correct"]}')
+        log_message(f'    Positive Top5 Correct: {metrics["type"]["raw_data"]["positive_top5_correct"]}')
+        log_message(f'    Negative Total: {metrics["type"]["raw_data"]["negative_total"]}')
+        log_message(f'    Negative Correct: {metrics["type"]["raw_data"]["negative_correct"]}')
+        log_message('='*50)
+        
+        # # 检查是否触发早停
+        # if patience_counter >= patience:
+        #     early_stop = True
+        #     log_message(f'Early stopping triggered at epoch {epoch+1}. Best weighted score: {best_weighted_score:.4f}')
+        #     break
+
+def get_optimizer_and_scheduler(model, train_dataloader, num_epochs):
+    """获取优化器和学习率调度器"""
+    optimizer_grouped_parameters = [
+        {
+            'params': [p for n, p in model.named_parameters() if 'bert' in n],
+            'lr': 3e-5  # 略微提高BERT的学习率
+        },
+        {
+            'params': [p for n, p in model.named_parameters() if 'bert' not in n],
+            'lr': 2e-4  # 提高其他层的学习率
+        }
+    ]
     
+    optimizer = AdamW(optimizer_grouped_parameters)
+    
+    # 调整预热策略
+    total_steps = len(train_dataloader) * num_epochs
+    warmup_steps = int(total_steps * 0.15)  # 增加预热步数到15%
+    
+    # 使用带有多个循环的余弦退火
+    scheduler = get_cosine_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=warmup_steps,
+        num_training_steps=total_steps,
+        num_cycles=2.0  # 增加到2个余弦周期
+    )
+    
+    return optimizer, scheduler
+    
+def main():
     # 基础配置
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
@@ -222,11 +639,13 @@ def main():
     
     os.makedirs(SAVE_DIR, exist_ok=True)
     
-    # 根据任务选择训练轮数和数据路径
-    EPOCHS = POSITION_EPOCHS if args.stage == 'position' else TYPE_EPOCHS
-    train_file = os.path.join(DATA_DIR, f'4_train_{args.stage}.csv')
-    val_file = os.path.join(DATA_DIR, f'4_val_{args.stage}.csv')
-    test_file = os.path.join(DATA_DIR, f'4_test_{args.stage}.csv')
+    # 预处理特征和映射文件路径
+    features_path = os.path.join(DATA_DIR, 'allusion_features_strictly_dict.pt')
+    mapping_path = os.path.join(DATA_DIR, 'allusion_mapping_strictly_dict.json')
+    
+    # 检查预处理文件是否存在
+    if not os.path.exists(features_path) or not os.path.exists(mapping_path):
+        raise FileNotFoundError("请先运行 process_dict_features.py 生成预处理特征！")
     
     # 加载典故词典和类型映射
     allusion_dict, type_label2id, id2type_label, num_types = load_allusion_dict()
@@ -235,135 +654,66 @@ def main():
     # 初始化tokenizer
     tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_PATH)
     
-    if args.stage == 'position':
-        print("Starting Stage 1: Position Recognition")
-        print(f"Training for {EPOCHS} epochs")
-        print(f"Using training data: {train_file}")
-        print(f"Using validation data: {val_file}")
-        
-        model = AllusionBERTCRF(BERT_MODEL_PATH, num_types, dict_size).to(device)
-        
-        train_dataset = PoetryNERDataset(
-            train_file, tokenizer, MAX_SEQ_LEN,
-            type_label2id=type_label2id,
-            id2type_label=id2type_label,
-            task='position'
-        )
-        val_dataset = PoetryNERDataset(
-            val_file, tokenizer, MAX_SEQ_LEN,
-            type_label2id=type_label2id,
-            id2type_label=id2type_label,
-            task='position'
-        )
-        
-    else:  # args.stage == 'type'
-        print("Starting Stage 2: Type Classification")
-        print(f"Training for {EPOCHS} epochs")
-        print(f"Using training data: {train_file}")
-        print(f"Using validation data: {val_file}")
-        
-        model = AllusionBERTCRF(BERT_MODEL_PATH, num_types, dict_size).to(device)
-        
-        # 加载模型参数
-        checkpoint_path = os.path.join(SAVE_DIR, 'best_model.pt')
-        if not os.path.exists(checkpoint_path):
-            raise FileNotFoundError("Please complete Stage 1 (position) training first!")
-            
-        checkpoint = torch.load(checkpoint_path)
-        stage1_state_dict = checkpoint['model_state_dict']
-        
-        # 只加载bert和bilstm的参数
-        new_state_dict = {
-            name: param for name, param in stage1_state_dict.items()
-            if name.startswith('bert') or name.startswith('bilstm')
-        }
-        model.load_state_dict(new_state_dict, strict=False)
-        print("Loaded BERT and BiLSTM parameters from Stage 1 model")
-        
-        train_dataset = PoetryNERDataset(
-            train_file, tokenizer, MAX_SEQ_LEN,
-            type_label2id=type_label2id,
-            id2type_label=id2type_label,
-            task='type'
-        )
-        val_dataset = PoetryNERDataset(
-            val_file, tokenizer, MAX_SEQ_LEN,
-            type_label2id=type_label2id,
-            id2type_label=id2type_label,
-            task='type'
-        )
+    # 初始化模型
+    model = AllusionBERTCRF(BERT_MODEL_PATH, num_types, dict_size,
+                            bi_label_weight=0.15,position_weight=0.0).to(device)
+
+    print("\nstarting from scratch")
+    # 创建训练和验证数据集
+    train_dataset = PoetryNERDataset(
+        os.path.join(DATA_DIR, '5_train_position_no_bug_less_negatives_single_allusion.csv'),
+        tokenizer, MAX_SEQ_LEN,
+        type_label2id=type_label2id,
+        id2type_label=id2type_label,
+        features_path=features_path,
+        mapping_path=mapping_path,
+        negative_sample_ratio=0.05
+    )
+    
+    val_dataset = PoetryNERDataset(
+        os.path.join(DATA_DIR, '5_val_position_no_bug_less_negatives_single_allusion.csv'),
+        tokenizer, MAX_SEQ_LEN,
+        type_label2id=type_label2id,
+        id2type_label=id2type_label,
+        features_path=features_path,
+        mapping_path=mapping_path,
+        negative_sample_ratio=0.05
+    )
     
     # 创建数据加载器
     train_dataloader = DataLoader(
         train_dataset, 
-        batch_size=BATCH_SIZE, 
+        batch_size=BATCH_SIZE,
         shuffle=True,
         collate_fn=train_dataset.collate_fn
     )
-
+    
     val_dataloader = DataLoader(
-        val_dataset, 
-        batch_size=BATCH_SIZE, 
-        shuffle=False,
+        val_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=False,  # 验证集不需要打乱
         collate_fn=val_dataset.collate_fn
     )
     
-    # 优化器和学习率调度器
-    optimizer = AdamW(model.parameters(), lr=LEARNING_RATE)
-    total_steps = len(train_dataloader) * EPOCHS
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=total_steps * 0.1,
-        num_training_steps=total_steps
+    # 获取优化器和调度器
+    optimizer, scheduler = get_optimizer_and_scheduler(
+        model=model,
+        train_dataloader=train_dataloader,
+        num_epochs=EPOCHS
     )
     
-    # 训练模型
+    # 开始训练
     train_model(
-        model, train_dataloader, val_dataloader, optimizer, scheduler,
-        device, EPOCHS, SAVE_DIR, args.stage, allusion_dict
+        model=model,
+        train_dataloader=train_dataloader,
+        val_dataloader=val_dataloader,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        device=device,
+        num_epochs=EPOCHS,
+        save_dir=SAVE_DIR,
+        id2type_label=id2type_label
     )
-
-def test():
-    """测试训练相关功能"""
-    # 测试用例
-    test_cases = [
-        ("一入石渠署，三闻宫树蝉。", [(2, 3, '石渠')]),
-        ("桃源避秦人不见，武陵渔父独知处。", [(0, 2, "桃源")]),
-    ]
-    
-    print("=== 测试字典特征提取 ===")
-    
-    # 加载典故词典
-    allusion_dict, _, _, _ = load_allusion_dict()
-    
-    # 为每个典故分配ID
-    allusion_to_id = {name: idx for idx, name in enumerate(allusion_dict.keys())}
-    id_to_allusion = {idx: name for name, idx in allusion_to_id.items()}
-    
-    for poem, expected in test_cases:
-        print(f"\n测试诗句: {poem}")
-        print(f"预期典故: {expected}")
-        
-        # 获取特征
-        features = prepare_sparse_features([poem], allusion_dict)
-        
-        print("\n提取的特征:")
-        print("特征形状:", features['indices'].shape)
-        print("活跃特征数:", features['active_counts'][0])
-        
-        # 分析每个位置检测到的典故
-        print("\n位置分析:")
-        for pos in range(len(poem)):
-            active_count = features['active_counts'][0][pos].item()
-            if active_count > 0:
-                print(f"\n位置 {pos} ({poem[pos]}):")
-                for idx in range(active_count):
-                    allusion_id = features['indices'][0][pos][idx].item()
-                    similarity = features['values'][0][pos][idx].item()
-                    allusion_name = id_to_allusion[allusion_id]
-                    print(f"  - 典故: {allusion_name}, 相似度: {similarity:.3f}")
-        
-        print("\n" + "="*50)
 
 if __name__ == '__main__':
     main()

@@ -1,0 +1,18 @@
+=== Allusion Count Analysis ===
+
+Total Samples: 1457
+Total True Allusions: 1519
+Total Predicted Allusions: 1599
+
+Average Counts:
+  True Allusions per Sample: 1.04
+  Predicted Allusions per Sample: 1.10
+
+Sample Statistics:
+  Samples with True Allusions: 174 (11.94%)
+  Samples with Predicted Allusions: 111 (7.62%)
+
+Count Comparison:
+  Predictions < Truth: 65 (4.46%)
+  Predictions = Truth: 106 (7.28%)
+  Predictions > Truth: 3 (0.21%)

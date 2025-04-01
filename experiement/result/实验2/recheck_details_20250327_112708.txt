@@ -1,0 +1,1520 @@
+=== Detailed Analysis of No-Overlap Segments ===
+Total samples with extra predictions: 175
+Total no-overlap segments: 185
+Segments with type 'O' prediction: 34 (18.38%)
+
+Detailed segment information:
+
+Case 1:
+Full text: 吏部逢今日，还应瓮下眠。
+Extra predicted segment: 吏部
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 644 (probability: 93.46%)
+--------------------------------------------------
+
+Case 2:
+Full text: 空歌拔山力，羞作渡江人。
+Extra predicted segment: 拔山
+Predicted count vs True count: 1 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 648 (probability: 98.58%)
+--------------------------------------------------
+
+Case 3:
+Full text: 以言神仙尉，因致瑶华音。
+Extra predicted segment: 瑶华
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 534 (probability: 66.21%)
+--------------------------------------------------
+
+Case 4:
+Full text: 今夜故山依旧见，班家扇样碧峰东。
+Extra predicted segment: 故山
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 954 (probability: 59.13%)
+--------------------------------------------------
+
+Case 5:
+Full text: 皋鹤惊秋律，琴乌怨夜啼。
+Extra predicted segment: 皋鹤
+Predicted count vs True count: 1 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 304 (probability: 91.51%)
+--------------------------------------------------
+
+Case 6:
+Full text: 中宫陈广乐，元老进赓歌。
+Extra predicted segment: 广乐
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 219 (probability: 75.82%)
+--------------------------------------------------
+
+Case 7:
+Full text: 原生衣百结，颜子食一箪。
+Extra predicted segment: 衣百结
+Predicted count vs True count: 3 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 612 (probability: 94.71%)
+--------------------------------------------------
+
+Case 8:
+Full text: 原生衣百结，颜子食一箪。
+Extra predicted segment: 颜子
+Predicted count vs True count: 3 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 612 (probability: 94.71%)
+--------------------------------------------------
+
+Case 9:
+Full text: 原生衣百结，颜子食一箪。
+Extra predicted segment: 一箪
+Predicted count vs True count: 3 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 612 (probability: 94.71%)
+--------------------------------------------------
+
+Case 10:
+Full text: 越欧百炼时，楚卞三泣地。
+Extra predicted segment: 卞三
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 98 (probability: 97.37%)
+--------------------------------------------------
+
+Case 11:
+Full text: 遥领短兵登陇首，独横长剑向河源。
+Extra predicted segment: 长剑
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 183 (probability: 98.10%)
+--------------------------------------------------
+
+Case 12:
+Full text: 跛鳖难随骐骥足，伤禽莫趁凤凰飞。
+Extra predicted segment: 凤凰飞
+Predicted count vs True count: 1 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 66.04%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 13:
+Full text: 门多金埒骑，路引璧人车。
+Extra predicted segment: 金埒
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 99.62%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 14:
+Full text: 五柳茅茨楚国贤，桔槔蔬圃水涓涓。
+Extra predicted segment: 桔槔
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 814 (probability: 95.76%)
+--------------------------------------------------
+
+Case 15:
+Full text: 权分金节重，恩借铁冠雄。
+Extra predicted segment: 金节
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 863 (probability: 98.50%)
+--------------------------------------------------
+
+Case 16:
+Full text: 金粉为书重莫过，黄庭旧许右军多。请看今日酬恩德，何似当年为爱鹅。
+Extra predicted segment: 右军
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 266 (probability: 98.54%)
+--------------------------------------------------
+
+Case 17:
+Full text: 愿言随狎鸟，从此濯吾缨。
+Extra predicted segment: 狎鸟
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 513 (probability: 96.98%)
+--------------------------------------------------
+
+Case 18:
+Full text: 远公一去兜率宫，唯有面前虎溪水。
+Extra predicted segment: 虎溪
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 814 (probability: 91.05%)
+--------------------------------------------------
+
+Case 19:
+Full text: 连城之璧不可量，五百年知草圣当。
+Extra predicted segment: 草圣
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 815 (probability: 95.86%)
+--------------------------------------------------
+
+Case 20:
+Full text: 好为麻姑到东海，劝栽黄竹莫栽桑。
+Extra predicted segment: 黄竹
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 993 (probability: 91.17%)
+--------------------------------------------------
+
+Case 21:
+Full text: 君游金谷堤上，我在石渠署里。
+Extra predicted segment: 金谷
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 944 (probability: 30.99%)
+--------------------------------------------------
+
+Case 22:
+Full text: 楞伽堆案前，楚辞系肘后。
+Extra predicted segment: 肘后
+Predicted count vs True count: 1 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 98.29%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 23:
+Full text: 蹈海宁受赏，还山非问津。
+Extra predicted segment: 蹈海
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 877 (probability: 94.33%)
+--------------------------------------------------
+
+Case 24:
+Full text: 峨峨秦氏髻，皎皎洛川神。风月应相笑，年年病醉身。
+Extra predicted segment: 秦氏髻
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 81.59%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 25:
+Full text: 侍笔黄金台，传觞青玉案。
+Extra predicted segment: 青玉案
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 1002 (probability: 97.54%)
+--------------------------------------------------
+
+Case 26:
+Full text: 地闲分鹿苑，景胜类桃源。
+Extra predicted segment: 鹿苑
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 472 (probability: 98.95%)
+--------------------------------------------------
+
+Case 27:
+Full text: 陶潜岂是铜符吏，田凤终为锦帐郎。
+Extra predicted segment: 锦帐郎
+Predicted count vs True count: 3 vs 2
+O-label ratio in segment: 0.00%
+Type prediction: class 649 (probability: 97.20%)
+--------------------------------------------------
+
+Case 28:
+Full text: 所思云雨外，何处寄馨香。
+Extra predicted segment: 香。
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 886 (probability: 95.16%)
+--------------------------------------------------
+
+Case 29:
+Full text: 抚稚君休感，无儿我不伤。
+Extra predicted segment: 无儿
+Predicted count vs True count: 1 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 96.95%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 30:
+Full text: 凤雏皆五色，鸿渐又双飞。
+Extra predicted segment: 五色
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 512 (probability: 99.37%)
+--------------------------------------------------
+
+Case 31:
+Full text: 凤雏皆五色，鸿渐又双飞。
+Extra predicted segment: 双飞
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 512 (probability: 99.37%)
+--------------------------------------------------
+
+Case 32:
+Full text: 熏弦歌舜德，和鼎致尧名。
+Extra predicted segment: 和鼎
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 93.64%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 33:
+Full text: 桂树一枝当白日，芸香三代继清风。
+Extra predicted segment: 芸香
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 333 (probability: 98.55%)
+--------------------------------------------------
+
+Case 34:
+Full text: 元首伫盐梅，股肱惟辅弼。
+Extra predicted segment: 股肱
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 619 (probability: 93.50%)
+--------------------------------------------------
+
+Case 35:
+Full text: 严陵高揖汉天子，何必长剑拄颐事玉阶。
+Extra predicted segment: 长剑
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 40 (probability: 97.66%)
+--------------------------------------------------
+
+Case 36:
+Full text: 宋玉邻边腮正嫩，文君机上锦初裁。
+Extra predicted segment: 文君
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 285 (probability: 92.77%)
+--------------------------------------------------
+
+Case 37:
+Full text: 山公欲上马，笑杀襄阳儿。
+Extra predicted segment: 上马
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 739 (probability: 95.35%)
+--------------------------------------------------
+
+Case 38:
+Full text: 况闻内金盘，尽在卫霍室。
+Extra predicted segment: 金盘
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 309 (probability: 75.69%)
+--------------------------------------------------
+
+Case 39:
+Full text: 日得谢客游，时堪陶令醉。
+Extra predicted segment: 谢客
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 894 (probability: 47.76%)
+--------------------------------------------------
+
+Case 40:
+Full text: 盈手入怀皆不见，阳春曲丽转难酬。
+Extra predicted segment: 入怀
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 615 (probability: 98.95%)
+--------------------------------------------------
+
+Case 41:
+Full text: 应向桃源里，教他唤阮郎。
+Extra predicted segment: 桃源
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 884 (probability: 97.65%)
+--------------------------------------------------
+
+Case 42:
+Full text: 从兹一别武陵去，去后桃花春水深。
+Extra predicted segment: 桃花春
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 472 (probability: 99.00%)
+--------------------------------------------------
+
+Case 43:
+Full text: 一吟梁甫曲，知是卧龙才。
+Extra predicted segment: 梁甫曲
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 75 (probability: 97.28%)
+--------------------------------------------------
+
+Case 44:
+Full text: 弟沉沧海底，偷珠待龙睡。一朝龙醒寤，本但喜复得珠，不求珠所目。酬客双龙女，授客六龙辔一朝龙醒寤，本问偷珠事。因知行雨偏，妻子五刑备。
+Extra predicted segment: 双龙
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 947 (probability: 96.35%)
+--------------------------------------------------
+
+Case 45:
+Full text: 揽涕黄金台，呼天哭昭王。无人贵骏骨，騄耳空腾骧。
+Extra predicted segment: 黄金台
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 50.34%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 46:
+Full text: 仙子玉京路，主人金谷园。
+Extra predicted segment: 金谷园
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 949 (probability: 47.85%)
+--------------------------------------------------
+
+Case 47:
+Full text: 知音若相遇，终不滞南溟。
+Extra predicted segment: 南溟
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 627 (probability: 95.81%)
+--------------------------------------------------
+
+Case 48:
+Full text: 人说淮南有小山，淮王昔日此登仙。城中鸡犬皆飞去，山上坛场今宛然。
+Extra predicted segment: 小山
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 80 (probability: 85.62%)
+--------------------------------------------------
+
+Case 49:
+Full text: 人说淮南有小山，淮王昔日此登仙。城中鸡犬皆飞去，山上坛场今宛然。
+Extra predicted segment: 鸡犬皆
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 80 (probability: 85.62%)
+--------------------------------------------------
+
+Case 50:
+Full text: 被服圣人教，一生自穷苦。
+Extra predicted segment: 服圣
+Predicted count vs True count: 1 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 99.55%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 51:
+Full text: 胡蝶梦中家万里，子规枝上月三更。
+Extra predicted segment: 子规
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 751 (probability: 98.76%)
+--------------------------------------------------
+
+Case 52:
+Full text: 雄如马武皆弹剑，少似终军亦请缨。
+Extra predicted segment: 弹剑
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 6.55%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 53:
+Full text: 苏武才为典属国，节旄落尽海西头。
+Extra predicted segment: 苏武
+Predicted count vs True count: 3 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 875 (probability: 93.29%)
+--------------------------------------------------
+
+Case 54:
+Full text: 苏武才为典属国，节旄落尽海西头。
+Extra predicted segment: 节旄落
+Predicted count vs True count: 3 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 875 (probability: 93.29%)
+--------------------------------------------------
+
+Case 55:
+Full text: 可惜陶潜无限酒，不逢篱菊正开花。
+Extra predicted segment: 篱菊
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 770 (probability: 96.79%)
+--------------------------------------------------
+
+Case 56:
+Full text: 谢公尝乞墅，宁氏终相宅。
+Extra predicted segment: 谢公
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 281 (probability: 94.81%)
+--------------------------------------------------
+
+Case 57:
+Full text: 惭愧故人同鲍叔，此心江柳尚依依。
+Extra predicted segment: 依依
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 94.28%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 58:
+Full text: 谢公秋思渺天涯，蜡屐登高为菊花。
+Extra predicted segment: 菊花
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 714 (probability: 98.05%)
+--------------------------------------------------
+
+Case 59:
+Full text: 公卿红粒爨丹桂，黔首白骨封青苔。
+Extra predicted segment: 白骨
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 787 (probability: 37.18%)
+--------------------------------------------------
+
+Case 60:
+Full text: 廷尉张罗自不关，潘郎挟弹无情损。
+Extra predicted segment: 廷尉张
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 83.17%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 61:
+Full text: 补羸贪紫桂，负气托青萍。
+Extra predicted segment: 青萍
+Predicted count vs True count: 1 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 254 (probability: 83.85%)
+--------------------------------------------------
+
+Case 62:
+Full text: 吾祖昔登临，谢公亦游衍。
+Extra predicted segment: 谢公
+Predicted count vs True count: 1 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 70.95%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 63:
+Full text: 长卿未遇杨朱泣，蔡泽无媒原宪贫。
+Extra predicted segment: 长卿
+Predicted count vs True count: 3 vs 2
+O-label ratio in segment: 0.00%
+Type prediction: class 456 (probability: 95.47%)
+--------------------------------------------------
+
+Case 64:
+Full text: 多谢谪仙侣，几时还玉京。
+Extra predicted segment: 仙侣
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 572 (probability: 97.55%)
+--------------------------------------------------
+
+Case 65:
+Full text: 卧看中散论，愁忆太常斋。
+Extra predicted segment: 中散论
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 8.24%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 66:
+Full text: 悲作楚地囚，何日秦庭哭。
+Extra predicted segment: 秦庭哭
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 179 (probability: 85.97%)
+--------------------------------------------------
+
+Case 67:
+Full text: 兴阑巾倒戴，山公下习池。
+Extra predicted segment: 习池
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 309 (probability: 98.30%)
+--------------------------------------------------
+
+Case 68:
+Full text: 千枝白露陶潜柳，百尺黄金郭隗台。
+Extra predicted segment: 陶潜柳
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 1002 (probability: 99.24%)
+--------------------------------------------------
+
+Case 69:
+Full text: 襄王忽妖梦，宋玉复淫辞。万事捐宫馆，空山云雨期。
+Extra predicted segment: 宋玉
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 886 (probability: 97.96%)
+--------------------------------------------------
+
+Case 70:
+Full text: 尝高谢太傅，携妓东山门。暂因苍生起，谈笑安黎元。
+Extra predicted segment: 谢太傅
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 34 (probability: 52.32%)
+--------------------------------------------------
+
+Case 71:
+Full text: 巢父将许由，未闻买山隐。
+Extra predicted segment: 许由
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 762 (probability: 76.61%)
+--------------------------------------------------
+
+Case 72:
+Full text: 载感贾生恸，复闻乐毅书。
+Extra predicted segment: 乐毅
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 73 (probability: 95.98%)
+--------------------------------------------------
+
+Case 73:
+Full text: 公车诣魏阙，天子垂清问。
+Extra predicted segment: 天子垂
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 49.80%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 74:
+Full text: 此时骊龙亦吐珠，冯夷击鼓群龙趋。
+Extra predicted segment: 冯夷
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 947 (probability: 98.41%)
+--------------------------------------------------
+
+Case 75:
+Full text: 闻有冲天客，披云下帝畿。
+Extra predicted segment: 披云
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 139 (probability: 76.54%)
+--------------------------------------------------
+
+Case 76:
+Full text: 褒姒冢前烽火起，不知泉下破颜无。
+Extra predicted segment: 泉下
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 99.38%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 77:
+Full text: 老病无乐事，岁秋悲更长。
+Extra predicted segment: 岁秋悲
+Predicted count vs True count: 1 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 368 (probability: 50.60%)
+--------------------------------------------------
+
+Case 78:
+Full text: 壁间潜认偷光处，川上宁忘结网时。
+Extra predicted segment: 偷光
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 90.39%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 79:
+Full text: 延襟小山路，还起大风歌。
+Extra predicted segment: 小山
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 961 (probability: 92.69%)
+--------------------------------------------------
+
+Case 80:
+Full text: 山根三尺墓，人口数联诗。
+Extra predicted segment: 三尺
+Predicted count vs True count: 1 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 495 (probability: 96.53%)
+--------------------------------------------------
+
+Case 81:
+Full text: 凤凰初下紫泥诏，谒帝称觞登御筵。
+Extra predicted segment: 凤凰
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 667 (probability: 77.68%)
+--------------------------------------------------
+
+Case 82:
+Full text: 不知柯烂者，何处看围棋。
+Extra predicted segment: 看围棋
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 376 (probability: 82.93%)
+--------------------------------------------------
+
+Case 83:
+Full text: 长卿无产业，季子惭妻嫂。
+Extra predicted segment: 长卿
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 99.58%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 84:
+Full text: 桑田代已变，池草春犹碧。
+Extra predicted segment: 池草
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 508 (probability: 52.51%)
+--------------------------------------------------
+
+Case 85:
+Full text: 无心伴行雨，何必梦荆王。
+Extra predicted segment: 行雨
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 99.05%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 86:
+Full text: 将来山太守，早向习家池。
+Extra predicted segment: 山太守
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 41.83%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 87:
+Full text: 焉能学众口，咄咄空咨嗟。
+Extra predicted segment: 众口
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 469 (probability: 86.50%)
+--------------------------------------------------
+
+Case 88:
+Full text: 苏秦六印归何日，潘岳双毛去值秋。
+Extra predicted segment: 双毛
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 472 (probability: 99.16%)
+--------------------------------------------------
+
+Case 89:
+Full text: 已观蓬海变，谁厌柏梁灾。
+Extra predicted segment: 柏梁
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 475 (probability: 98.43%)
+--------------------------------------------------
+
+Case 90:
+Full text: 韩康助采君臣药，支遁同看内外篇。
+Extra predicted segment: 韩康
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 406 (probability: 98.12%)
+--------------------------------------------------
+
+Case 91:
+Full text: 宾客不见绨袍惠，黎庶未沾襦裤恩。
+Extra predicted segment: 襦裤
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 78 (probability: 91.89%)
+--------------------------------------------------
+
+Case 92:
+Full text: 同悲鹊绕树，独坐雁随阳。
+Extra predicted segment: 独坐
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 98.33%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 93:
+Full text: 贾谊哭时事，阮籍哭路岐。
+Extra predicted segment: 贾谊哭时
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 384 (probability: 95.59%)
+--------------------------------------------------
+
+Case 94:
+Full text: 留欢若可尽，劫石乃成灰。
+Extra predicted segment: 劫石
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 577 (probability: 96.97%)
+--------------------------------------------------
+
+Case 95:
+Full text: 人随川上逝，书向壁中留。
+Extra predicted segment: 壁中
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 823 (probability: 92.19%)
+--------------------------------------------------
+
+Case 96:
+Full text: 金乌欲上海如血，翠色一点蓬莱光。
+Extra predicted segment: 蓬莱
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 658 (probability: 98.52%)
+--------------------------------------------------
+
+Case 97:
+Full text: 黄犬空叹息，绿珠成衅雠。
+Extra predicted segment: 黄犬
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 684 (probability: 92.47%)
+--------------------------------------------------
+
+Case 98:
+Full text: 才子学诗趋露冕，棠花含笑待斑衣。
+Extra predicted segment: 棠花
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 693 (probability: 97.55%)
+--------------------------------------------------
+
+Case 99:
+Full text: 长卿慕蔺久，子猷意已深。
+Extra predicted segment: 长卿
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 99.52%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 100:
+Full text: 群臣相庆嘉鱼乐，共哂横汾歌吹秋。
+Extra predicted segment: 鱼乐
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 266 (probability: 98.16%)
+--------------------------------------------------
+
+Case 101:
+Full text: 武陵川径入幽遐，中有鸡犬秦人家。
+Extra predicted segment: 犬秦
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 628 (probability: 94.66%)
+--------------------------------------------------
+
+Case 102:
+Full text: 青云不识杨生面，天子何由问子虚。
+Extra predicted segment: 青云
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 268 (probability: 96.80%)
+--------------------------------------------------
+
+Case 103:
+Full text: 堕髻还名寿，修蛾本姓秦。
+Extra predicted segment: 姓秦
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 69.44%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 104:
+Full text: 风日燥水田，水涸尘飞起。
+Extra predicted segment: 飞起
+Predicted count vs True count: 1 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 66.89%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 105:
+Full text: 今朝欲乘兴，随尔食鲈鱼。
+Extra predicted segment: 鲈鱼
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 791 (probability: 99.32%)
+--------------------------------------------------
+
+Case 106:
+Full text: 平阳擅歌舞，金谷盛招携。
+Extra predicted segment: 平阳
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 858 (probability: 98.51%)
+--------------------------------------------------
+
+Case 107:
+Full text: 安期今何在，方丈蔑寻路。
+Extra predicted segment: 方丈
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 283 (probability: 95.98%)
+--------------------------------------------------
+
+Case 108:
+Full text: 瑶台既灭夏，琼室复陨汤。覆车世不悟，秦氏兴阿房。
+Extra predicted segment: 瑶台
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 766 (probability: 76.17%)
+--------------------------------------------------
+
+Case 109:
+Full text: 灞亭不重李将军，汉爵犹轻苏属国。
+Extra predicted segment: 李将军
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 29 (probability: 96.65%)
+--------------------------------------------------
+
+Case 110:
+Full text: 阮家今夜乐，应在竹林间。
+Extra predicted segment: 竹林
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 513 (probability: 98.93%)
+--------------------------------------------------
+
+Case 111:
+Full text: 花时金谷饮，月夜竹林眠。
+Extra predicted segment: 金谷
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 652 (probability: 98.18%)
+--------------------------------------------------
+
+Case 112:
+Full text: 犹隔箫韶一峰在，遥传五马向东来。
+Extra predicted segment: 箫韶
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 80 (probability: 98.36%)
+--------------------------------------------------
+
+Case 113:
+Full text: 班升鸳鹭频经岁，任佐龚黄必暂时。
+Extra predicted segment: 鸳鹭
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 1013 (probability: 89.23%)
+--------------------------------------------------
+
+Case 114:
+Full text: 宫中每出归东省，会送夔龙集凤池。
+Extra predicted segment: 夔龙
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 921 (probability: 99.43%)
+--------------------------------------------------
+
+Case 115:
+Full text: 尊有陶潜酒，囊无陆贾金。
+Extra predicted segment: 陶潜酒
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 467 (probability: 97.97%)
+--------------------------------------------------
+
+Case 116:
+Full text: 月中有桂树，日中有伴侣。
+Extra predicted segment: 桂树
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 132 (probability: 94.95%)
+--------------------------------------------------
+
+Case 117:
+Full text: 暗溪迟仙侣，寒涧闻松禽。
+Extra predicted segment: 仙侣
+Predicted count vs True count: 1 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 842 (probability: 68.68%)
+--------------------------------------------------
+
+Case 118:
+Full text: 三三上应三千日，九九中延九万年。
+Extra predicted segment: 三千
+Predicted count vs True count: 2 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 99.35%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 119:
+Full text: 三三上应三千日，九九中延九万年。
+Extra predicted segment: 九万
+Predicted count vs True count: 2 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 99.35%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 120:
+Full text: 倾盖见芳姿，晴天琼树枝。
+Extra predicted segment: 倾盖
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 684 (probability: 95.21%)
+--------------------------------------------------
+
+Case 121:
+Full text: 月蚀西方破敌时，及瓜归日未应迟。
+Extra predicted segment: 西方
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 0.12%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 122:
+Full text: 国人咸寡和，遥愧洛阳才。
+Extra predicted segment: 寡和
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 843 (probability: 98.18%)
+--------------------------------------------------
+
+Case 123:
+Full text: 时人未会严陵志，不钓鲈鱼只钓名。
+Extra predicted segment: 鲈鱼
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 402 (probability: 82.11%)
+--------------------------------------------------
+
+Case 124:
+Full text: 谁问南飞长绕树，官微同在谢公门。
+Extra predicted segment: 绕树
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 386 (probability: 67.26%)
+--------------------------------------------------
+
+Case 125:
+Full text: 棣华晴雨好，彩服暮春宜。
+Extra predicted segment: 彩服
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 781 (probability: 33.58%)
+--------------------------------------------------
+
+Case 126:
+Full text: 天下苍生望不休，东山虽有但时游。
+Extra predicted segment: 东山
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 581 (probability: 78.80%)
+--------------------------------------------------
+
+Case 127:
+Full text: 楚城将坐啸，郢曲有馀悲。
+Extra predicted segment: 郢曲
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 615 (probability: 22.20%)
+--------------------------------------------------
+
+Case 128:
+Full text: 荀家位极兼禅理，应笑埋轮著所操。
+Extra predicted segment: 荀家
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 319 (probability: 92.49%)
+--------------------------------------------------
+
+Case 129:
+Full text: 宣室夜阑如有问，可能全望未然灰。
+Extra predicted segment: 然灰
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 199 (probability: 82.93%)
+--------------------------------------------------
+
+Case 130:
+Full text: 领取嫦娥攀取桂，便从陵谷一时迁。
+Extra predicted segment: 嫦娥
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 717 (probability: 96.70%)
+--------------------------------------------------
+
+Case 131:
+Full text: 莫怪天涯栖不稳，托身须是万年枝。
+Extra predicted segment: 万年枝
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 893 (probability: 92.13%)
+--------------------------------------------------
+
+Case 132:
+Full text: 𩿪鴳敢辞栖短棘，凤凰犹解怯高罗。
+Extra predicted segment: 凤凰
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 783 (probability: 98.86%)
+--------------------------------------------------
+
+Case 133:
+Full text: 今日秋风满湘浦，只应搔首咏琼枝。
+Extra predicted segment: 秋风
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 827 (probability: 95.56%)
+--------------------------------------------------
+
+Case 134:
+Full text: 由来四皓须神伏，大抵秦皇谩气强。
+Extra predicted segment: 秦皇
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 843 (probability: 91.49%)
+--------------------------------------------------
+
+Case 135:
+Full text: 越欧百炼时，楚卞三泣地。二宝无人识，千齿皆弃置。
+Extra predicted segment: 越欧百
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 843 (probability: 98.87%)
+--------------------------------------------------
+
+Case 136:
+Full text: 君不见昔时燕家重郭隗，拥彗折节无嫌猜。剧辛乐毅感恩分，输肝剖胆效英才。昭王白骨萦蔓草，谁人更扫黄金台。
+Extra predicted segment: 郭隗
+Predicted count vs True count: 3 vs 2
+O-label ratio in segment: 0.00%
+Type prediction: class 372 (probability: 98.05%)
+--------------------------------------------------
+
+Case 137:
+Full text: 君不见昔时燕家重郭隗，拥彗折节无嫌猜。剧辛乐毅感恩分，输肝剖胆效英才。昭王白骨萦蔓草，谁人更扫黄金台。
+Extra predicted segment: 乐毅
+Predicted count vs True count: 3 vs 2
+O-label ratio in segment: 0.00%
+Type prediction: class 372 (probability: 98.05%)
+--------------------------------------------------
+
+Case 138:
+Full text: 水是还珠浦，山成种玉田。
+Extra predicted segment: 种玉田
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 214 (probability: 67.26%)
+--------------------------------------------------
+
+Case 139:
+Full text: 莫下蓬山不回首，东风犹待重抟扶。
+Extra predicted segment: 蓬山
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 338 (probability: 96.28%)
+--------------------------------------------------
+
+Case 140:
+Full text: 闺馀春早景沉沉，禊饮风亭恣赏心。红袖青娥留永夕，汉阴宁肯羡山阴。
+Extra predicted segment: 山阴
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 506 (probability: 95.41%)
+--------------------------------------------------
+
+Case 141:
+Full text: 俱怀鸿鹄志，昔有鹡鸰心。
+Extra predicted segment: 鸿鹄
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 983 (probability: 97.17%)
+--------------------------------------------------
+
+Case 142:
+Full text: 一枝谁不折，棣萼独相辉。
+Extra predicted segment: 一枝
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 486 (probability: 98.24%)
+--------------------------------------------------
+
+Case 143:
+Full text: 应同谷口寻春去，定似山阴带月归。
+Extra predicted segment: 谷口
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 47 (probability: 95.19%)
+--------------------------------------------------
+
+Case 144:
+Full text: 龙髯悲满眼，螭首泪沾裳。
+Extra predicted segment: 泪沾裳
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 1006 (probability: 93.39%)
+--------------------------------------------------
+
+Case 145:
+Full text: 老马思故枥，穷鳞忆深流。
+Extra predicted segment: 穷鳞
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 694 (probability: 40.37%)
+--------------------------------------------------
+
+Case 146:
+Full text: 龙渠之右，凤城之东。
+Extra predicted segment: 凤城
+Predicted count vs True count: 1 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 873 (probability: 76.60%)
+--------------------------------------------------
+
+Case 147:
+Full text: 郡楼遐想刘琨啸，相閤方窥谢傅棋。
+Extra predicted segment: 谢傅
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 98.77%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 148:
+Full text: 欲知世掌丝纶美，池上于今有凤毛。
+Extra predicted segment: 丝纶
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 142 (probability: 93.68%)
+--------------------------------------------------
+
+Case 149:
+Full text: 一夕南风一叶危，荆云回望夏云时。
+Extra predicted segment: 一叶
+Predicted count vs True count: 1 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 381 (probability: 98.29%)
+--------------------------------------------------
+
+Case 150:
+Full text: 斑竹啼舜妇，清湘沉楚臣。
+Extra predicted segment: 斑竹啼舜妇
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 2 (probability: 76.32%)
+--------------------------------------------------
+
+Case 151:
+Full text: 稍类冲天鹤，多随折桂人。
+Extra predicted segment: 冲天
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 469 (probability: 95.82%)
+--------------------------------------------------
+
+Case 152:
+Full text: 旧迹依然已十秋，雪山当面照银钩。
+Extra predicted segment: 雪山
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 868 (probability: 81.22%)
+--------------------------------------------------
+
+Case 153:
+Full text: 片辞贵白璧，一诺轻黄金。
+Extra predicted segment: 白璧
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 624 (probability: 64.88%)
+--------------------------------------------------
+
+Case 154:
+Full text: 杨花满江来，疑是龙山雪。
+Extra predicted segment: 龙山
+Predicted count vs True count: 1 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 600 (probability: 75.26%)
+--------------------------------------------------
+
+Case 155:
+Full text: 登朝非大隐，出谷是真愚。
+Extra predicted segment: 大隐
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 884 (probability: 99.27%)
+--------------------------------------------------
+
+Case 156:
+Full text: 登朝非大隐，出谷是真愚。
+Extra predicted segment: 出谷
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 884 (probability: 99.27%)
+--------------------------------------------------
+
+Case 157:
+Full text: 坐见林木荣，愿赴沧洲期。
+Extra predicted segment: 林木
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 68.03%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 158:
+Full text: 唯君饮冰心，可酌贪泉水。
+Extra predicted segment: 饮冰
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 98.20%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 159:
+Full text: 良玉同其中，三日烧不热。
+Extra predicted segment: 三日
+Predicted count vs True count: 1 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 97.10%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 160:
+Full text: 鞔鼓画麒麟，看君击狂节。
+Extra predicted segment: 麒麟
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 992 (probability: 92.12%)
+--------------------------------------------------
+
+Case 161:
+Full text: 莫道东山远，衡门在梦思。
+Extra predicted segment: 东山
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 977 (probability: 81.81%)
+--------------------------------------------------
+
+Case 162:
+Full text: 闲逐维私向武城，北风青雀片时行。
+Extra predicted segment: 青雀
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 1011 (probability: 72.45%)
+--------------------------------------------------
+
+Case 163:
+Full text: 何如圣代弹冠出，方朔曾为汉侍郎。
+Extra predicted segment: 弹冠
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 420 (probability: 67.46%)
+--------------------------------------------------
+
+Case 164:
+Full text: 芳洲号鹦鹉，用记祢生才。
+Extra predicted segment: 祢生
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 987 (probability: 96.62%)
+--------------------------------------------------
+
+Case 165:
+Full text: 三阁霞明天上开，灵鼍振擂神仙出。
+Extra predicted segment: 仙出
+Predicted count vs True count: 1 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 33.15%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 166:
+Full text: 无劳白衣酒，陶令自相携。
+Extra predicted segment: 陶令
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 817 (probability: 76.46%)
+--------------------------------------------------
+
+Case 167:
+Full text: 昔窃不死药，奔空有嫦娥。
+Extra predicted segment: 窃不死药
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 260 (probability: 98.44%)
+--------------------------------------------------
+
+Case 168:
+Full text: 几出东堂谢不才，便甘閒望故山回。
+Extra predicted segment: 故山
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 469 (probability: 94.53%)
+--------------------------------------------------
+
+Case 169:
+Full text: 故园何处在，零落五湖东。
+Extra predicted segment: 五湖
+Predicted count vs True count: 1 vs 0
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 99.58%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 170:
+Full text: 西望瑶池降王母，东来紫气满函关。
+Extra predicted segment: 王母
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 523 (probability: 93.83%)
+--------------------------------------------------
+
+Case 171:
+Full text: 西望瑶池降王母，东来紫气满函关。
+Extra predicted segment: 紫气
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 523 (probability: 93.83%)
+--------------------------------------------------
+
+Case 172:
+Full text: 放萤去，不须留，聚吋少年今白头。青云杳渺不可亲，开囊欲放增馀怨。
+Extra predicted segment: 青云
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 697 (probability: 97.93%)
+--------------------------------------------------
+
+Case 173:
+Full text: 有病无媒客，多慵亦太疏。自怜成叔夜，谁与荐相如。
+Extra predicted segment: 荐相
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 199 (probability: 88.91%)
+--------------------------------------------------
+
+Case 174:
+Full text: 别鹤凄凉指法存，戴逵能耻近王门。
+Extra predicted segment: 别鹤
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 894 (probability: 36.49%)
+--------------------------------------------------
+
+Case 175:
+Full text: 请君为苍生，未可追赤松。
+Extra predicted segment: 为苍生
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 374 (probability: 88.30%)
+--------------------------------------------------
+
+Case 176:
+Full text: 怅望龙门晚，谁知小隐家。
+Extra predicted segment: 龙门
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 242 (probability: 97.06%)
+--------------------------------------------------
+
+Case 177:
+Full text: 柱史从来非俗吏，青牛道士莫相疑。
+Extra predicted segment: 青牛道
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 463 (probability: 76.98%)
+--------------------------------------------------
+
+Case 178:
+Full text: 野人未必非毛遂，太守还须是孟尝。
+Extra predicted segment: 毛遂
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 276 (probability: 80.48%)
+--------------------------------------------------
+
+Case 179:
+Full text: 熏风一万里，来处是长安。
+Extra predicted segment: 长安
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 144 (probability: 47.24%)
+--------------------------------------------------
+
+Case 180:
+Full text: 已启蓬莱殿，初朝鸳鹭群。
+Extra predicted segment: 蓬莱
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 974 (probability: 99.43%)
+--------------------------------------------------
+
+Case 181:
+Full text: 燕昭寤寐常求骏，郭隗寻思未是贤。
+Extra predicted segment: 郭隗
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 948 (probability: 81.87%)
+--------------------------------------------------
+
+Case 182:
+Full text: 桃源迷汉姓，松树有秦官。
+Extra predicted segment: 桃源
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 642 (probability: 90.84%)
+--------------------------------------------------
+
+Case 183:
+Full text: 琼玖鬻来燕石贵，蓬蒿芳处楚兰衰。
+Extra predicted segment: 琼玖
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 66.37%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 184:
+Full text: 琼玖鬻来燕石贵，蓬蒿芳处楚兰衰。
+Extra predicted segment: 蓬蒿
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 0 (probability: 66.37%)
+*** This segment is predicted as type 'O' ***
+--------------------------------------------------
+
+Case 185:
+Full text: 结成一衣和泪封，封书只在怀袖中。
+Extra predicted segment: 一衣
+Predicted count vs True count: 2 vs 1
+O-label ratio in segment: 0.00%
+Type prediction: class 137 (probability: 98.66%)
+--------------------------------------------------

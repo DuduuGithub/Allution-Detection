@@ -1,11 +1,8 @@
 from difflib import SequenceMatcher
 import numpy as np
-from sklearn.cluster import DBSCAN
-import json
-import pandas as pd
-from tqdm import tqdm
 
 # 计算两个字符串之间的相似度
+#ATTENTION 这个算法是在写报告时更新的！在模型中使用的是原来的算法，原来只对sorted==sorted额外处理
 def string_similarity(str1, str2):
     """计算两个字符串之间的相似度
     
@@ -19,15 +16,16 @@ def string_similarity(str1, str2):
     if str1 == str2:
         return 1.0
         
-    # 使用 SequenceMatcher 计算相似度
-    # SequenceMatcher 会考虑字符的顺序和位置，但对调换位置的相同字符仍然保持较高的相似度
-    similarity = SequenceMatcher(None, str1, str2).ratio()
+    # 计算原始顺序的相似度
+    original_similarity = SequenceMatcher(None, str1, str2).ratio()
     
-    # 对于完全相同字符的不同排列（如"侩牛"和"牛侩"），增加其相似度
-    if sorted(str1) == sorted(str2):
-        similarity = max(similarity, 0.8)  # 确保位置调换的相同字符有较高的相似度
-        
-    return similarity
+    # 计算排序后的相似度
+    sorted_similarity = SequenceMatcher(None, ''.join(sorted(str1)), ''.join(sorted(str2))).ratio()
+    
+    # 组合两种相似度，给排序后的相似度一个较小的权重（如0.3）
+    final_similarity = original_similarity * 0.7 + sorted_similarity * 0.3
+    
+    return final_similarity
 
 # 选择每个聚类的代表词
 def select_representative(cluster):
@@ -43,29 +41,32 @@ def select_representative(cluster):
     # 选择与其他词平均相似度最高的词作为代表词
     return max(avg_similarities.items(), key=lambda x: x[1])[0]
 
-def calculate_optimal_eps_for_group(grouped_words):
-    """为单个大组计算最优eps值"""
+def calculate_optimal_eps_for_all_groups(major_groups):
+    """为所有组计算最优eps值，考虑所有组间的相似度"""
     # 存储所有组内相似度和组间相似度
     intra_similarities = []  # 组内相似度
     inter_similarities = []  # 组间相似度
     
-    # 获取每个小组的代表词
-    representatives = []
-    for group in grouped_words:
-        representatives.append(select_representative(group))
+    # 获取所有小组及其代表词
+    all_groups = []
+    all_representatives = []
+    for major_group in major_groups:
+        for group in major_group:
+            all_groups.append(group)
+            all_representatives.append(select_representative(group))
     
     # 计算组内相似度
-    for i, group in enumerate(grouped_words):
-        rep = representatives[i]
+    for i, group in enumerate(all_groups):
+        rep = all_representatives[i]
         for word in group:
             if word != rep:
                 intra_similarities.append(string_similarity(rep, word))
     
-    # 计算组间相似度（仅在同一大组内的小组之间）
-    for i in range(len(grouped_words)):
-        for j in range(i + 1, len(grouped_words)):
-            rep_i = representatives[i]
-            for word in grouped_words[j]:
+    # 计算所有组间相似度
+    for i in range(len(all_groups)):
+        for j in range(i + 1, len(all_groups)):
+            rep_i = all_representatives[i]
+            for word in all_groups[j]:
                 inter_similarities.append(string_similarity(rep_i, word))
     
     # 将相似度转换为numpy数组并排序
@@ -102,243 +103,6 @@ def calculate_optimal_eps_for_group(grouped_words):
     
     return best_eps if best_eps is not None else 0.5
 
-def calculate_optimal_eps(major_groups):
-    """计算所有大组的平均最优eps值
-    
-    Args:
-        major_groups: 列表的列表的列表，结构为 [大组[小组[词]]]
-    Returns:
-        float: 平均最优eps值
-    """
-    eps_values = []
-    
-    # 为每个大组计算最优eps
-    for major_group in major_groups:
-        eps = calculate_optimal_eps_for_group(major_group)
-        if eps is not None:
-            eps_values.append(eps)
-            print(f"Eps for major group: {eps:.3f}")
-    
-    return np.mean(eps_values)
-
-def cluster_with_dbscan(words, eps):
-    # 构建相似度矩阵
-    n = len(words)
-    similarity_matrix = np.zeros((n, n))
-    for i in range(n):
-        for j in range(n):
-            similarity_matrix[i][j] = string_similarity(words[i], words[j])
-    
-    # 使用DBSCAN进行聚类
-    # 距离矩阵 = 1 - 相似度矩阵
-    distance_matrix = 1 - similarity_matrix
-    dbscan = DBSCAN(eps=eps, min_samples=1, metric='precomputed')
-    clusters = dbscan.fit_predict(distance_matrix)
-    
-    # 整理聚类结果
-    cluster_dict = {}
-    for i, label in enumerate(clusters):
-        if label not in cluster_dict:
-            cluster_dict[label] = []
-        cluster_dict[label].append(words[i])
-    
-    return cluster_dict
-
-
-def process_allusion_variants(input_file='data/updated_典故的异性数据.csv', 
-                            output_file='data/cleared_allusion_type.csv',
-                            eps=None):
-    """处理典故异形词数据，生成代表词文件"""
-    print(f"读取数据文件: {input_file}")
-    
-    # 修改读取方式，尝试不同的分隔符和引擎
-    try:
-        # 首先尝试用 csv 模块读取前几行来检查文件格式
-        with open(input_file, 'r', encoding='utf-8') as f:
-            first_line = f.readline()
-            if ',' in first_line:
-                df = pd.read_csv(input_file, encoding='utf-8')
-            else:
-                df = pd.read_csv(input_file, encoding='utf-8', sep='\t')
-    except Exception as e:
-        print(f"读取文件时出错: {e}")
-        print("尝试使用 python 引擎读取...")
-        df = pd.read_csv(input_file, encoding='utf-8', engine='python')
-    
-    print(f"成功读取数据，共 {len(df)} 行")
-    
-    # 检查必要的列是否存在
-    required_columns = ['allusion', 'variation_list']
-    missing_columns = [col for col in required_columns if col not in df.columns]
-    if missing_columns:
-        raise ValueError(f"缺少必要的列: {missing_columns}")
-    
-    # 显示数据集的基本信息
-    print("\n数据集信息:")
-    print(df.info())
-    print("\n前几行数据示例:")
-    print(df[['allusion', 'variation_list']].head())
-    
-    # 统计原始异形词总数
-    total_variants_before = 0
-    variants_by_allusion_before = {}
-    for _, row in df.iterrows():
-        if pd.isna(row['variation_list']) or row['variation_list'] == '':
-            continue
-        variants = eval(row['variation_list'])
-        if variants:
-            total_variants_before += len(variants)
-            variants_by_allusion_before[row['allusion']] = len(variants)
-    
-    # 如果没有提供eps，则读取保存的最优eps
-    if eps is None:
-        try:
-            with open('data/optimal_eps.json', 'r', encoding='utf-8') as f:
-                eps = json.load(f)['optimal_eps']
-        except FileNotFoundError:
-            eps = 0.5  # 默认值
-    
-    print(f"使用eps值: {eps}")
-    
-    # 准备结果字典，key为典故名，value为代表词列表
-    results_dict = {}
-    total_variants_after = 0
-    variants_by_allusion_after = {}
-    
-    # 处理每一行
-    for _, row in tqdm(df.iterrows(), desc="处理典故变体", total=len(df)):
-        # 获取变体列表
-        if pd.isna(row['variation_list']) or row['variation_list'] == '':
-            continue
-            
-        variants = eval(row['variation_list'])  # 将字符串转换为列表
-        
-        if not variants:  # 如果变体列表为空
-            continue
-            
-        # 使用DBSCAN聚类
-        clusters = cluster_with_dbscan(variants, eps)
-        
-        # 为每个聚类选择代表词
-        representatives = []
-        for cluster in clusters.values():
-            representative = select_representative(cluster)
-            representatives.append(representative)
-        
-        # 将代表词添加到结果字典
-        allusion_name = row['allusion']
-        results_dict[allusion_name] = representatives
-        
-        # 统计聚类后的数量
-        total_variants_after += len(representatives)
-        variants_by_allusion_after[allusion_name] = len(representatives)
-    
-    # 转换为DataFrame并保存
-    results_df = pd.DataFrame({
-        'allusion': list(results_dict.keys()),
-        'variation_list': [';'.join(reps) for reps in results_dict.values()]
-    })
-    
-    # 保存结果前先检查是否存在重复的典故
-    results_df = results_df.drop_duplicates(subset=['allusion'], keep='first')
-    
-    # 使用mode='w'确保覆盖原文件而不是追加
-    results_df.to_csv(output_file, index=False, encoding='utf-8', sep='\t', mode='w')
-    
-    # 打印统计信息
-    print("\n=== 数据统计 ===")
-    print(f"处理前异形词总数: {total_variants_before}")
-    print(f"处理后代表词总数: {total_variants_after}")
-    print(f"减少词数: {total_variants_before - total_variants_after}")
-    print(f"压缩比: {(total_variants_before - total_variants_after) / total_variants_before * 100:.2f}%")
-    
-    print("\n典故数量统计:")
-    print(f"总典故数: {len(results_dict)}")
-    print(f"平均每个典故的原始异形词数: {total_variants_before / len(results_dict):.2f}")
-    print(f"平均每个典故的代表词数: {total_variants_after / len(results_dict):.2f}")
-    
-    # 打印一些变化最大的典故示例
-    print("\n变化最显著的典故示例:")
-    changes = [(k, variants_by_allusion_before.get(k, 0) - variants_by_allusion_after.get(k, 0)) 
-              for k in variants_by_allusion_before.keys()]
-    changes.sort(key=lambda x: x[1], reverse=True)
-    
-    for allusion, change in changes[:5]:
-        print(f"\n典故: {allusion}")
-        print(f"原始异形词数: {variants_by_allusion_before[allusion]}")
-        print(f"代表词数: {variants_by_allusion_after[allusion]}")
-        print(f"减少词数: {change}")
-        print(f"代表词: {results_dict[allusion]}")
-
-def evaluate_clustering(clusters, reference_groups):
-    """评估聚类结果与参考分组的重合度
-    
-    Args:
-        clusters: 聚类结果字典 {label: [words]}
-        reference_groups: 参考分组列表 [[words]]
-    Returns:
-        dict: 包含各项评估指标的字典
-    """
-    # 计算聚类结果与每个参考组的重合度
-    overlaps = []
-    for ref_group in reference_groups:
-        ref_set = set(ref_group)
-        best_overlap = 0
-        best_cluster = None
-        
-        for cluster_label, cluster_words in clusters.items():
-            cluster_set = set(cluster_words)
-            # 计算Jaccard相似度
-            overlap = len(ref_set & cluster_set) / len(ref_set | cluster_set)
-            if overlap > best_overlap:
-                best_overlap = overlap
-                best_cluster = cluster_words
-        
-        overlaps.append({
-            'reference_group': ref_group,
-            'best_matching_cluster': best_cluster,
-            'overlap_score': best_overlap
-        })
-    
-    # 计算总体指标
-    avg_overlap = np.mean([o['overlap_score'] for o in overlaps])
-    
-    return {
-        'average_overlap': avg_overlap,
-        'detailed_overlaps': overlaps
-    }
-
-def run_clustering_example(major_groups, optimal_eps):
-    """运行聚类示例并评估结果
-    
-    Args:
-        major_groups: 参考分组列表
-        optimal_eps: 最优eps值
-    """
-    print("\n=== 聚类示例 ===")
-    
-    # 选择一个大组进行示例
-    for j in range(len(major_groups)):
-        example_group = major_groups[j]  # 可以选择其他组
-        
-        # 获取所有词
-        all_words = []
-        for subgroup in example_group:
-            all_words.extend(subgroup)
-        
-        print(f"\n原始分组:")
-        for i, subgroup in enumerate(example_group):
-            print(f"组 {i+1}: {subgroup}")
-        
-        # 使用DBSCAN进行聚类
-        clusters = cluster_with_dbscan(all_words, optimal_eps)
-        
-        print(f"\n聚类结果:")
-        for label, words in clusters.items():
-            rep = select_representative(words)
-            print(f"簇 {label}:")
-            print(f"  代表词: {rep}")
-            print(f"  成员: {words}")
 
 if __name__ == "__main__":
     # 示例分组（多个大组，每个大组包含多个小组）
@@ -443,5 +207,5 @@ if __name__ == "__main__":
     ]
     
     # 1. 计算最优eps
-    optimal_eps = calculate_optimal_eps(major_groups)
+    optimal_eps = calculate_optimal_eps_for_all_groups(major_groups)
     print(f"\n最优eps值: {optimal_eps:.3f}")

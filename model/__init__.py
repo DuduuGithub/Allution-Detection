@@ -1,1 +1,1 @@
-from .config import OPTIMAL_EPS, min_samples
+from .config import OPTIMAL_EPS, min_samples_size

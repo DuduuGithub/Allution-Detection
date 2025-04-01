@@ -1,3 +1,7 @@
+'''
+    输入诗句，输出典故特征提取结果
+'''
+
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -5,11 +9,6 @@ import pandas as pd
 import torch
 from difflib import SequenceMatcher
 from model.config import OPTIMAL_EPS
-
-'''
-    输入诗句，输出典故特征提取结果
-'''
-
 
 def prepare_sparse_features(batch_texts, allusion_dict, max_active=5):
     """将文本批量转换为稀疏特征格式
@@ -111,18 +110,53 @@ def prepare_sparse_features(batch_texts, allusion_dict, max_active=5):
     }
 
 # 经测试，使用updated_典故的异性数据.csv 效果会更好，比如对桃源避秦人不见，武陵渔父独知处。 识别不出桃源 说明判断相关性的算法可能需要再优化。二者的时间差异还挺大的
-def load_representative_dict(file_path='data/allusion_representative.csv'):
-    """加载典故代表词数据"""
-    print(f"加载典故代表词数据: {file_path}")
-    df = pd.read_csv(file_path, encoding='utf-8',sep='\t')
+def load_allusion_dict(dict_file='data/cleared_allusion_type.csv'):
+    """加载典故词典并创建类型映射
     
+    Returns:
+        tuple: (
+            allusion_dict: Dict[str, List[str]],  # {典故代表词: [变体列表]}
+            type_label2id: Dict[str, int],        # {类型名: 类型ID}
+            id2type_label: Dict[int, str],        # {类型ID: 类型名}
+            num_types: int                        # 类型总数（包含非典故类型）
+        )
+    """
+    # 1. 读取典故词典
     allusion_dict = {}
-    for _, row in df.iterrows():
-        allusion = row['allusion']
-        representatives = row['variation_list'].split('\t')
-        allusion_dict[allusion] = representatives
+    type_set = set()  # 用于收集所有类型
     
-    return allusion_dict
+    df = pd.read_csv(dict_file, encoding='utf-8', sep='\t')
+    for _, row in df.iterrows():
+        # 处理典故名和类型
+        allusion = row['allusion']
+    
+        # 处理变体列表
+        variants = eval(row['representatives'])  # 安全地解析字符串列表
+        
+        # 添加到典故词典
+        allusion_dict[allusion] = variants
+        # 收集类型
+        type_set.add(allusion)
+    
+    # 2. 创建类型映射
+    # 首先添加非典故类型（ID为0）
+    type_label2id = {'O': 0}          # 'O' 表示非典故
+    id2type_label = {0: 'O'}
+    
+    # 对其他类型名称排序以确保映射的一致性
+    sorted_types = sorted(list(type_set))
+    for idx, label in enumerate(sorted_types, start=1):  # 从1开始编号
+        type_label2id[label] = idx
+        id2type_label[idx] = label
+    
+    num_types = len(type_label2id)  # 包含非典故类型
+    
+    print(f"Loaded allusion dictionary with {len(allusion_dict)} entries")
+    print(f"Found {num_types} types (including non-allusion type)")
+    print(f"Type label 0 is reserved for non-allusion")
+    
+    return allusion_dict, type_label2id, id2type_label, num_types
+
 
 def calculate_similarity(s1, s2):
     """计算两个字符串的相似度"""
@@ -131,12 +165,12 @@ def calculate_similarity(s1, s2):
 def test_poem_recognition():
     """测试诗句中的典故识别效果"""
     test_cases = [
-        ("一入石渠署，三闻宫树蝉。", [(2, 3,'石渠')]),
-        ("桃源避秦人不见，武陵渔父独知处。", [(0, 2, "桃源")]),
+        ("一公何不住，空有远公名。", [(2, 3,'石渠')]),
+        ("桃源数曲尽，洞口两岸坼。", [(0, 2, "桃源")]),
     ]
     
     # 加载典故词典
-    allusion_dict = load_representative_dict()
+    allusion_dict, _, _, _ = load_allusion_dict()
     # 创建ID到典故名的映射
     # 为每个典故分配ID
     allusion_to_id = {name: idx for idx, name in enumerate(allusion_dict.keys())}
